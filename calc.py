@@ -586,6 +586,17 @@ def hist(x, density=False, norm=False, **kwargs):
     return bin_center, hist, hist_err, kwargs
 
 
+# %% func: praction
+def praction(select, within, weights=None):
+    """
+    TODO : use collapsed select list
+    """
+    if weights is None:
+        return np.nansum(select & within) / np.nansum(within)
+    else:
+        return np.nansum(weights[select & within]) / np.nansum(weights[within])
+
+
 # %% loess2d from Kai
 # forked from https://github.com/wkcosmology/MyPyScript/blob/master/stats/loess2d.py
 """
