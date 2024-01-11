@@ -16,15 +16,13 @@ from scipy.optimize import curve_fit as scipy_curve_fit
 # %% func: choose good and calc min, max, mean and median
 def isgood(array):
     # returns the indices of values that are not masked, not nan and not infinite.
-    try:
+    if hasattr(array, 'copy'):
         # I don't know why but this function will change the original array.
         array = array.copy()
-    except Exception:
-        pass
 
-    try:
+    if hasattr(array, 'mask'):
         mask = array.mask
-    except Exception:
+    else:
         mask = None
     if mask is None:
         mask = np.zeros_like(array, dtype=bool)
@@ -325,6 +323,7 @@ def select_percentile(x,
                       array_of_percentiles=[25, 50, 75],
                       select=slice(None)):
     # x = choose_value(dict(), None, x, 'data', None, x)
+    select = attr.combine_selections(select, reference=x)
     x = np.where(select, x, np.nan)
     cuts = np.nanpercentile(x, array_of_percentiles)
     nbins = len(cuts) + 1
@@ -400,6 +399,7 @@ def bin_map(x, y, z=None, weights=None, func=mean,
     x_edges, y_edges: 1-d array with length = nbins+1. Similar with np.histogram2d
     """
 
+    select = attr.combine_selections(select, reference=x)
     x = x[select]
     y = y[select]
     if z is not None:
@@ -520,7 +520,7 @@ def bin_map(x, y, z=None, weights=None, func=mean,
 
 
 # %% func: hist
-def hist(x, density=False, norm=False, **kwargs):
+def hist(x, density=False, norm=False, select=slice(None), **kwargs):
     """
     density: scaled by the step length
     norm: further scaling to make integrated area = 1
@@ -537,8 +537,7 @@ def hist(x, density=False, norm=False, **kwargs):
     """
     x_left = attr.choose_value(kwargs, 'x_left', x, 'left', min, x)
     x_right = attr.choose_value(kwargs, 'x_right', x, 'right', max, x)
-    select_list = kwargs.get('select_list')
-    select, _ = attr.integrate_select(select_list)
+    select = attr.combine_selections(select, reference=x)
     x = x[select]
     weights = kwargs.get('weights')
     if kwargs.get('x_step', None) is None:
@@ -586,11 +585,10 @@ def hist(x, density=False, norm=False, **kwargs):
     return bin_center, hist, hist_err, kwargs
 
 
-# %% func: praction
-def praction(select, within, weights=None):
-    """
-    TODO : use collapsed select list
-    """
+# %% func: fraction
+def fraction(select, within=slice(None), weights=None):
+    # combine `within` when it is a list, and save `within` from slice(None)
+    within = attr.combine_selections(within, reference=select)
     if weights is None:
         return np.nansum(select & within) / np.nansum(within)
     else:

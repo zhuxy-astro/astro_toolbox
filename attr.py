@@ -35,11 +35,12 @@ def array2column(array: np.ndarray | Table,
         To be added into the meta of the array. May with 'name'.
     """
 
-    if not isinstance(array, np.ndarray):
-        array = np.array(array)
-    elif isinstance(array, Table):
+    if isinstance(array, Table):
+        # avoid the index mixing from Table(list)
         array = table2array(array)
-    # avoid the index mixing from Table(list)
+    elif not isinstance(array, np.ndarray):
+        array = np.array(array)
+
     if not isinstance(meta_from, (Table, Column)):
         meta_from = None
 
@@ -48,7 +49,10 @@ def array2column(array: np.ndarray | Table,
         if meta_from is not None:
             name = meta_from.name
         else:
-            name = 'col'
+            if hasattr(array, 'name'):
+                name = array.name
+            else:
+                name = 'col'
 
     column = Column(array, name=name)
     if meta_from is not None:
@@ -68,33 +72,56 @@ def array2column(array: np.ndarray | Table,
     """
 
 
-# %% integrate selects
-def integrate_select(list_of_selects: list):
+# %% combine selections
+def combine_selections(list_of_selects, reference=None):
     """
-    Integrate a list of selections, with a list of their names also returned.
+    Input a selection array or a list of selections, output the join of them in Column.
+    The name of the output is the join of the names, separated by ', ', set in Column.name.
+    The `reference` is an array in the same dimension, used to determine whether the
+        `list_of_selects` is single or multiple, and is recommended to be set.
 
     Returns
     -------
     select_result : an bool array
     name_list : a list of names
-
     """
+
+    # the comparison between Column and slice(None) is an array of bool
+    list_of_selects_is_empty = (list_of_selects == slice(None))
+    if hasattr(list_of_selects_is_empty, 'any'):
+        list_of_selects_is_empty = list_of_selects_is_empty.any()
+
     list_of_selects_is_empty = (
-        list_of_selects is None
-        or list_of_selects == slice(None)
-        or len(list_of_selects) == 0)
+        list_of_selects_is_empty
+        or (list_of_selects is None)
+        or (len(list_of_selects) == 0))
+
     if list_of_selects_is_empty:
-        return slice(None), []
+        if reference is not None:
+            return Column(np.ones_like(reference, dtype=bool), name='')
+        else:
+            return slice(None)  # note that no name is returned here
+
+    if reference is not None:
+        list_of_selects_is_single = len(list_of_selects) == len(reference)
+    else:
+        try:
+            iter(list_of_selects[0])
+            list_of_selects_is_single = False
+        except TypeError:
+            list_of_selects_is_single = True
+
+    if list_of_selects_is_single:
+        return array2column(list_of_selects)
 
     select_result = np.ones_like(list_of_selects[0], dtype=bool)
     name_list = []
     for s in list_of_selects:
         select_result &= s
-        try:
+        if hasattr(s, 'name'):
             name_list += [s.name]
-        except Exception:
-            pass
-    return select_result, name_list
+    name_combined = ', '.join(name_list)
+    return array2column(select_result, name=name_combined)
 
 
 # %% set and reset attr
@@ -290,15 +317,13 @@ def choose_value(kwargs: dict,
     if par_is_not_empty:
         return kwargs.get(par_name_in_kwargs)
     # 2nd prior: from column meta
-    try:
+    if hasattr(column, 'meta') and column.meta.get(attr_name) is not None:
         attr = column.meta[attr_name]
         return _set_kwargs_and_return(attr)
-    except Exception:
-        pass
     # 4th prior: None
     if func_or_default is None:
         return _set_kwargs_and_return(None)
-    # 3rd prior: default
+    # 3rd prior: calc default
     if callable(func_or_default):
         return _set_kwargs_and_return(func_or_default(*func_args))
     return _set_kwargs_and_return(func_or_default)
@@ -306,9 +331,9 @@ def choose_value(kwargs: dict,
 
 # %% wrap: set values
 def get_name(xyz, xyz_str, to_latex=False):
-    try:
+    if hasattr(xyz, 'name'):
         return xyz.name
-    except Exception:
+    else:
         if to_latex:
             return rf'${xyz_str.upper()}$'
         return xyz_str

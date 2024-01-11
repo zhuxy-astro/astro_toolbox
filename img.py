@@ -14,6 +14,7 @@ import signal
 # from retry import retry
 signal.signal(signal.SIGINT, multitasking.killall)
 
+
 # %% func: get image
 def get_sdss_url(ra, dec, scale=0.2, length=200, opt=''):
     """ra, dec are in degrees
@@ -51,6 +52,7 @@ def show_sdss_img(row=None, ra_dec=None):
     ax.imshow(img)
     fig.show()
 
+
 @multitasking.task
 def _get_one_sdss_img(
     table_i, failed_table,
@@ -58,7 +60,7 @@ def _get_one_sdss_img(
     bar=None,
     timeout=20,  # seconds
     **kwargs
-    ):
+):
     try:
         ra = table_i['ra']
         dec = table_i['dec']
@@ -103,5 +105,3 @@ def get_sdss_imgs(table, savedir='img', **kwargs):
         multitasking.wait_for_tasks()
     print(f'Done. {len(failed_table)} items failed.')
     return failed_table
-
-

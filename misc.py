@@ -31,18 +31,19 @@ def select_id(table, value, name=['plate', 'mjd', 'fiber']):
     """
     can deal with one or multiple values and names, and multiple rows.
     returns a bool array
-    When name has three attrs like ['p', 'm', 'f'],
-        value is like [280, 51612, 97] or like [[280, 51612, 97], [996, 52641, 513]]
-    When name has one attr like 'plate', or ['plate']
-        value is like 280, or like [280, 996]
+    When `name` has three attrs like ['p', 'm', 'f'],
+        `value` is like [280, 51612, 97] or like [[280, 51612, 97], [996, 52641, 513]]
+    When `name` has one attr like 'plate', or ['plate']
+        `value` is like 280, or like [280, 996]
     """
     is_single_name = type(name) is str
     if not is_single_name and (len(name) == 1):
         is_single_name = True
         name = name[0]
     if is_single_name:
+        # check if value is iterable
         try:
-            len(value)
+            iter(value)  # check if iterable
             # multiple value
             select_result = np.zeros(len(table), dtype=bool)
             for value_j in value:
