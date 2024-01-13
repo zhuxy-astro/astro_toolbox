@@ -271,66 +271,76 @@ def sift(original: np.ndarray | Column | MaskedColumn,
 
 # %% func: choose_value
 def choose_value(kwargs: dict,
-                 par_name_in_kwargs: str,
-                 column: Column,
-                 attr_name: str,
+                 xyz_attr_str: str,
+                 xyz: Column,
+                 attr_str: str,
                  func_or_default=None,
                  *func_args):
     """
     In a parent function, choose one of the values with different priorities.
-    Update it in `kwargs` and return it.
+    Update it in `kwargs` and return the value.
     Priorities:
-        1st: use the one set in **kwargs when the function is called,
+        1st: use the one set in **kwargs (like kwargs['x_left']) when the function is called,
         2nd: use the attribute in column.meta,
         3rd: use the default value, to get which a function calculation may be required,
         4th: None.
 
-    Usage
-    -----
+    Examples
+    --------
+    # use kwargs['x_step'], or x.meta['step'], or 0.1, and update kwargs['x_step']:
     choose_value(kwargs, 'x_step', x, 'step', 0.1)
-    x_edges = choose_value(kwargs, None, x, 'edges', np.arange, x_left, x_right + x_step, x_step)
-        # calculate the default value
+
+    # use x.meta['edges'], or np.arange(x_left, x_right + x_step, x_step),
+    # with no update in kwargs:
+    x_edges = choose_value(kwargs, None, x, 'edges',
+                           np.arange, x_left, x_right + x_step, x_step)
 
     Parameters
     ----------
-    par_name_in_kwargs:
+    kwargs: the one to be updated.
+    xyz_attr_str:
         The highest priority.
         The value set in **kwargs when the function is called.
         Should be like 'x_step'.
         Should be set to None if this priority is not considered.
 
-    column: can be either np.array or Column, e.g. x, y, sfr
-    attr_name: the name of an attribute from column.meta, e.g. 'label', 'left'
-    func_or_default: the default value, or a function to calc the defalut value. `None` if no calculation is required.
+    xyz: can be either np.array or Column, e.g. x, y, sfr
+    attr_str: the name of an attribute from column.meta, e.g. 'label', 'left'
+    func_or_default: the default value, or a function to calc the defalut value. `None` if no default is to be set.
     func_args: a set of args passed to func_to_calc_default when a further calculation is required.
     """
-    par_name_is_set = par_name_in_kwargs is not None
-    par_is_not_empty = par_name_is_set and (kwargs.get(par_name_in_kwargs) is not None)
+
+    xyz_attr_str_not_none = xyz_attr_str is not None
+    xyz_attr_is_in_kwargs = xyz_attr_str_not_none and (kwargs.get(xyz_attr_str) is not None)
     # The above `and` is to protect because kwargs.get(None) may give non-None results
 
-    def _set_kwargs_and_return(to_return):
-        if par_name_is_set:
-            kwargs[par_name_in_kwargs] = to_return
-        return to_return
+    def _update_kwargs_and_return(attr_value):
+        if xyz_attr_str_not_none:
+            kwargs[xyz_attr_str] = attr_value
+        return attr_value
 
     # 1st prior: from kwargs
-    if par_is_not_empty:
-        return kwargs.get(par_name_in_kwargs)
+    if xyz_attr_is_in_kwargs:
+        return kwargs.get(xyz_attr_str)
     # 2nd prior: from column meta
-    if hasattr(column, 'meta') and column.meta.get(attr_name) is not None:
-        attr = column.meta[attr_name]
-        return _set_kwargs_and_return(attr)
+    if hasattr(xyz, 'meta') and xyz.meta.get(attr_str) is not None:
+        attr_value = xyz.meta[attr_str]
+        return _update_kwargs_and_return(attr_value)
     # 4th prior: None
     if func_or_default is None:
-        return _set_kwargs_and_return(None)
+        return _update_kwargs_and_return(None)
     # 3rd prior: calc default
     if callable(func_or_default):
-        return _set_kwargs_and_return(func_or_default(*func_args))
-    return _set_kwargs_and_return(func_or_default)
+        return _update_kwargs_and_return(func_or_default(*func_args))
+    return _update_kwargs_and_return(func_or_default)
 
 
 # %% wrap: set values
 def get_name(xyz, xyz_str, to_latex=False):
+    """
+    First priority    : return x.name like 'mstar'
+    If x has no `name`: return xyz_str like 'x', or r'$X$' if to_latex is set
+    """
     if hasattr(xyz, 'name'):
         return xyz.name
     else:
@@ -340,6 +350,12 @@ def get_name(xyz, xyz_str, to_latex=False):
 
 
 def get_default(xyz, xyz_str, attr_str, kwargs, set_default):
+    """for one attr like 'x_left', refresh kwargs using `choose_value`
+    xyz is like x, y, z
+    xyz_str is like 'x', 'y', 'z'
+    attr_str is like 'left', 'right', 'label'
+    set_default is bool
+    """
     if set_default:
         if attr_str == 'left':
             default_args = (calc.min, xyz)
@@ -354,24 +370,33 @@ def get_default(xyz, xyz_str, attr_str, kwargs, set_default):
         default_args = []
 
     choose_value(kwargs,
-                 '_'.join([xyz_str, attr_str]),
+                 '_'.join([xyz_str, attr_str]),  # resume 'x_left'
                  xyz, attr_str,
                  *default_args)
     return kwargs
 
 
-def set_values(to_set=[], set_default=False, default_step_num=40):
+def set_values(to_set=[], set_default=False):
+    """
+    to_set is like ['x_step', 'y_label']
+    """
     def decorate(called_func):
         @wraps(called_func)
         # only takes called_func with x and y. No more, no less.
         def set_values_core(x, y, *args, **kwargs):
+            # to_set_split is like [['x', 'step'], ['y', 'label']]
             to_set_split = [i.split('_') for i in to_set]
+            # clean up to_set_split, remove the ones with wrong length and leave the ones like ['x', 'step']
             to_set_like_xyz_attr = [i for i in to_set_split if len(i) == 2]
+            # for each of them, refresh the kwargs
             for xyz_attr_list in to_set_like_xyz_attr:
-                xyz_str = xyz_attr_list[0]
-                xyz = eval(xyz_str)
-                attr_str = xyz_attr_list[1]
+                # xyz_attr_list is like ['x', 'step']
+                xyz_str = xyz_attr_list[0]  # like 'x'
+                xyz = eval(xyz_str)  # like x
+                attr_str = xyz_attr_list[1]  # like 'step'
+                # refresh kwargs
                 get_default(xyz, xyz_str, attr_str, kwargs, set_default)
+            # now that all the kwargs are refreshed, call the function
             func_return = called_func(x, y, *args, **kwargs)
             return func_return
         return set_values_core
