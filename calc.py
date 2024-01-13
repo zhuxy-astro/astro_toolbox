@@ -72,7 +72,6 @@ def vmax_inv(z_left, z_right, z_min, z_max,
     """
     cosmo = FlatLambdaCDM(H0=H0, Om0=Om0)
     # use interpolating in order to avoid calculating the integral many times
-    # this can make V_max in the relative accuracy of ~1e-4
     zs = np.linspace(0., 1., 1000)
     zs = zs ** 2
     zs = zs * 10.
@@ -337,9 +336,11 @@ def select_percentile(x,
 
 
 # %% func: bin map
-def value_in_bin(data, index_in_bin, weights=None,
+def value_in_bin(index_in_bin, data=None, weights=None,
                  at_least=1, func=mean, bar=None):
-    data_in_bin = data[index_in_bin]
+    if data is None:
+        data = np.ones_like(index_in_bin)
+    data_in_bin = data[index_in_bin]  # usually used in calculating hist when only weights are given
     if np.isfinite(data_in_bin).sum() < at_least:
         value = np.nan
         if bar is not None:
@@ -511,7 +512,7 @@ def bin_map(x, y, z=None, weights=None, func=mean,
         for i in range(xbins):
             for j in range(ybins):
                 index_in_xy_bin = index_in_x_bin[i] & index_in_y_bin[j]
-                binned_map[i][j] = value_in_bin(z, index_in_xy_bin,
+                binned_map[i][j] = value_in_bin(index_in_xy_bin, data=z,
                                                 weights=weights, at_least=at_least, func=func, bar=bar)
 
     # transpose the matric to follow a Cartesian convention. The same operation is NOT done in, e.g., np.histogram2d.
@@ -558,14 +559,13 @@ def hist(x, density=False, norm=False, select=slice(None), **kwargs):
         hist_err = np.sqrt(hist)
     else:
         weights = weights[select]
-        hist_ones = np.ones_like(weights)
 
         digitized_x = np.digitize(x, bin_edges)
         index_in_bin = [(digitized_x == i) for i in range(1, bins + 1)]
-        hist = [value_in_bin(hist_ones, index_in_bin_i, weights=weights,
+        hist = [value_in_bin(index_in_bin_i, weights=weights,
                              func=lambda d, w: np.nansum(d * w))
                 for index_in_bin_i in index_in_bin]
-        hist_err = [value_in_bin(hist_ones, index_in_bin_i, weights=weights,
+        hist_err = [value_in_bin(index_in_bin_i, weights=weights,
                                  func=lambda d, w:
                                      np.sqrt(np.nansum(w ** 2)))
                     for index_in_bin_i in index_in_bin]

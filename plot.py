@@ -316,59 +316,76 @@ def bin_map(x, y, z=None,
             attr.set(z_map, label='weighted counts')
         if plot_img:
             z_map_with_nan = attr.sift(z_map, min_=0, inplace=False)
-            fig, ax = img(x_edges, y_edges, z_map_with_nan, plt_kwargs=img_kwargs, select=select, **kwargs)
+            fig, ax = img(x_edges, y_edges, z_map_with_nan,
+                          plt_kwargs=img_kwargs, select=select, **kwargs)
             kwargs['fig_ax'] = (fig, ax)
         if plot_contour:
             # kwargs['cmap'] = None
-            fig, ax = contour(x_edges, y_edges, z_map, plt_kwargs=contour_kwargs, select=select,
+            fig, ax = contour(x_edges, y_edges, z_map,
+                              plt_kwargs=contour_kwargs, select=select,
                               **kwargs)
     else:
         z_map = attr.array2column(z_map, meta_from=z)
         if plot_img:
-            fig, ax = img(x_edges, y_edges, z_map, plt_kwargs=img_kwargs, select=select, **kwargs)
+            fig, ax = img(x_edges, y_edges, z_map,
+                          plt_kwargs=img_kwargs, select=select, **kwargs)
             kwargs['fig_ax'] = (fig, ax)
         # kwargs['cmap'] = None
         if plot_contour == 1:
-            fig, ax = contour(x_edges, y_edges, z_map, plt_kwargs=contour_kwargs, select=select, **kwargs)
+            fig, ax = contour(x_edges, y_edges, z_map,
+                              plt_kwargs=contour_kwargs, select=select, **kwargs)
         elif plot_contour == 2:
             hist_map, x_edges, y_edges = calc.bin_map(x, y, **kwargs)
-            fig, ax = contour(x_edges, y_edges, hist_map, plt_kwargs=contour_kwargs, select=select, **kwargs)
+            fig, ax = contour(x_edges, y_edges, hist_map,
+                              plt_kwargs=contour_kwargs, select=select, **kwargs)
     return fig, ax
 
 
 # %% func: plot 1d hist
 @set_plot()
-def _bar(fig, ax, x, y, plt_kwargs, y_log=False, **kwargs):
+def _bar(fig, ax, x, y, plt_kwargs=dict(), y_log=False, **kwargs):
     if y_log:
         ax.set_yscale('log')
+    print(kwargs)
     img = ax.bar(x, y, width=x[1] - x[0], **plt_kwargs)
     return img
 
 
-def hist(x, **kwargs):
+def hist(x,
+         # select=slice(None),
+         y_log=False,
+         plt_kwargs=dict(),
+         **kwargs):
     """
         x_label=r'$X$',
         y_left=0.,
         y_right=np.max(hist)*1.05
-        y_log=False,
         y_label='count',
     """
+    # select = attr.combine_selections(select, reference=x)
     x_center, h, h_err, kw = calc.hist(x, **kwargs)
     kwargs.update(kw)
-    attr.choose_value(kwargs, 'x_label', x, 'label', r'$X$')
+    # attr.choose_value(kwargs, 'x_label', x, 'label', r'$X$')
 
-    if kwargs.get('y_log', False):
-        kwargs['y_left'] = kwargs.get('y_left', 0.)
-        kwargs['y_right'] = kwargs.get('y_right', calc.max(h) * 1.05)
-    else:
+    if y_log:
         kwargs['y_left'] = kwargs.get('y_left', 10.)
         kwargs['y_right'] = kwargs.get('y_right', calc.max(h) * 1.1)
+    else:
+        kwargs['y_left'] = kwargs.get('y_left', 0.)
+        kwargs['y_right'] = kwargs.get('y_right', calc.max(h) * 1.05)
 
     if kwargs.get('weights') is None:
         kwargs['y_label'] = 'count'
     else:
         kwargs['y_label'] = 'weighted count'
-    fig, ax = _bar(x_center, h, **kwargs)
+
+    x_center = attr.array2column(x_center, meta_from=x)
+    h = attr.array2column(h, name='hist')
+
+    fig, ax = _bar(x_center, h,
+                   # select=select,
+                   plt_kwargs=plt_kwargs,
+                   **kwargs)
     ax.errorbar(x_center, h, yerr=h_err, ls='', markersize=0, elinewidth=1.5, ecolor='k')
     return fig, ax
 
