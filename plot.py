@@ -46,20 +46,17 @@ matplotlib.rc('savefig', format='pdf', dpi=300)
 
 
 # %% wrapper: set_plot
-# this takes only funcs with x and y, may have z. If the func has x only, use another func to wrap on it.
 def set_plot(special_suffix=''):
     def decorate(drawing_func):
         @wraps(drawing_func)
-        # TODO: set values for z_attr?
         @attr.set_values(
             set_default=True,
-            to_set=[
-                'x_label', 'x_left', 'x_right', 'x_line',
-                'y_label', 'y_left', 'y_right', 'y_line',
-            ])
-        def set_plot_core(x, y, z=None,
+            to_set=['x_label', 'x_left', 'x_right', 'x_line',
+                    'y_label', 'y_left', 'y_right', 'y_line',
+                    'z_label', 'z_left', 'z_right', 'z_line'])
+        def set_plot_core(x, y=None, z=None,
                           select=slice(None),
-                          plt_kwargs=dict(),
+                          plt_args=dict(),
                           title='',
                           filename=None,  # 'X-Y-Z.pdf' by default. If set to '', no file will be saved.
                           savedir='figures',
@@ -85,72 +82,70 @@ def set_plot(special_suffix=''):
             fig, ax
 
             The wraped function:
-                func(fig, ax, x, y, [z, ], [plt_kwargs=dict(),] **kwargs)
+                func(fig, ax, x, [y, z, ], [plt_args=dict(),] **kwargs)
             """
+            have_y = y is not None
+            have_z = z is not None
 
             name_list = []
             name_list.append(attr.get_name(x, 'X'))
-            name_list.append(attr.get_name(y, 'Y'))
-
-            if z is not None:
-                attr.choose_value(kwargs, 'z_left', z, 'left', calc.min, z)
-                attr.choose_value(kwargs, 'z_right', z, 'right', calc.max, z)
-                attr.choose_value(kwargs, 'z_label', z, 'label',
-                                  attr.get_name(z, 'Z', to_latex=True))
+            if have_y:
+                name_list.append(attr.get_name(y, 'Y'))
+            if have_z:
                 name_list.append(attr.get_name(z, 'Z'))
 
             if fig_ax is None:
                 fig, ax = plt.subplots(subplot_kw={'projection': proj})
                 ax.set_xlabel(kwargs['x_label'])
-                ax.set_ylabel(kwargs['y_label'])
+                if have_y:
+                    ax.set_ylabel(kwargs['y_label'])
             else:
-                # kwargs.pop('fig_ax')
                 fig, ax = fig_ax
-            if proj == 'aitoff':
+            if have_y and proj == 'aitoff':
                 x = calc.to_radian(x, reset_zero=True)
                 y = calc.to_radian(y, reset_zero=True)
             if proj == 'polar':
                 x = calc.to_radian(x, reset_zero=True)
 
+            # no reference here is set because select and x may have different values.
+            # In such case only the combined name is used.
             select = attr.combine_selections(select)  # , reference=x)
 
             # avoid warnings (mostly UserWarning: The following kwargs were not used by func: ...)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 # ---- DRAWING BEGINS----
-                if z is None:
-                    img = drawing_func(fig, ax,
-                                       x, y,
-                                       select=select,
-                                       plt_kwargs=plt_kwargs,
-                                       cmap=cmap,
-                                       **kwargs)
-                else:
-                    img = drawing_func(fig, ax,
-                                       x, y, z,
-                                       select=select,
-                                       plt_kwargs=plt_kwargs,
-                                       cmap=cmap,
-                                       **kwargs)
+                x_y_z = [x]
+                if have_y:
+                    x_y_z += [y]
+                if have_z:
+                    x_y_z += [z]
+                img = drawing_func(fig, ax,
+                                   *x_y_z,
+                                   select=select,
+                                   plt_args=plt_args,
+                                   cmap=cmap,
+                                   **kwargs)
                 # ---- DRAWING ENDS------
 
             if proj is None:
                 ax.set_xlim(kwargs.get('x_left'), kwargs.get('x_right'))
-                ax.set_ylim(kwargs.get('y_left'), kwargs.get('y_right'))
-            elif proj == 'polar':
+                if have_y:
+                    ax.set_ylim(kwargs.get('y_left'), kwargs.get('y_right'))
+            elif have_y and proj == 'polar':
                 ax.set_thetalim(calc.to_radian(kwargs.get('x_left')),
                                 calc.to_radian(kwargs.get('x_right')))
                 ax.set_rlim(kwargs.get('y_left'), kwargs.get('y_right'))
 
             already_has_cbar = fig.axes[-1].get_label() == '<colorbar>'
-            if z is not None and cmap is not None and not already_has_cbar:
+            if have_z and cmap is not None and not already_has_cbar:
                 cbar = fig.colorbar(img)
                 img.set_clim(kwargs['z_left'], kwargs['z_right'])
                 cbar.set_label(kwargs['z_label'])
 
             if kwargs['x_line'] is not None:
                 ax.axvline(kwargs['x_line'], linewidth=2, alpha=0.5, c='g')
-            if kwargs['y_line'] is not None:
+            if have_y and kwargs['y_line'] is not None:
                 ax.axhline(kwargs['y_line'], linewidth=2, alpha=0.5, c='g')
 
             if (title == '') and hasattr(select, 'name'):
@@ -178,7 +173,7 @@ def set_plot(special_suffix=''):
 
 # %% func: img and contour
 @set_plot()
-def img(fig, ax, x_edges, y_edges, z, plt_kwargs, bg=False, cmap='RdBu', **kwargs):
+def img(fig, ax, x_edges, y_edges, z, plt_args, bg=False, cmap='RdBu', **kwargs):
     """
     Parameters
     ----------
@@ -191,7 +186,7 @@ def img(fig, ax, x_edges, y_edges, z, plt_kwargs, bg=False, cmap='RdBu', **kwarg
                     origin='lower',
                     vmin=kwargs['z_left'], vmax=kwargs['z_right'],
                     cmap=cmap,
-                    **plt_kwargs)
+                    **plt_args)
     ax.grid()
     if bg:
         ax.set_facecolor('silver')
@@ -199,7 +194,7 @@ def img(fig, ax, x_edges, y_edges, z, plt_kwargs, bg=False, cmap='RdBu', **kwarg
 
 
 @set_plot()
-def contour(fig, ax, x_edges, y_edges, z, plt_kwargs,
+def contour(fig, ax, x_edges, y_edges, z, plt_args,
             contour_levels=15,
             cmap=None, **kwargs):
     """
@@ -210,18 +205,18 @@ def contour(fig, ax, x_edges, y_edges, z, plt_kwargs,
     """
     # cmap and colors shouldn't be set at the same time
     if cmap is None:
-        plt_kwargs.setdefault('colors', 'k')
+        plt_args.setdefault('colors', 'k')
     else:
-        plt_kwargs.setdefault('cmap', cmap)
-    plt_kwargs.setdefault('linewidths', 0.5)
-    plt_kwargs.setdefault('linestyles', 'solid')
+        plt_args.setdefault('cmap', cmap)
+    plt_args.setdefault('linewidths', 0.5)
+    plt_args.setdefault('linestyles', 'solid')
 
     x_centers = (x_edges[1:] + x_edges[:-1]) / 2
     y_centers = (y_edges[1:] + y_edges[:-1]) / 2
     x_centers_mesh, y_centers_mesh = np.meshgrid(x_centers, y_centers)
     img = ax.contour(x_centers_mesh, y_centers_mesh, z,
                      levels=np.linspace(kwargs['z_left'], kwargs['z_right'], contour_levels),
-                     **plt_kwargs,
+                     **plt_args,
                      )
     return img
 
@@ -231,7 +226,7 @@ def contour(fig, ax, x_edges, y_edges, z, plt_kwargs,
 def scatter(fig, ax,
             x, y, z=None, select=slice(None),
             border=False,
-            plt_kwargs=dict(),
+            plt_args=dict(),
             cmap='RdBu',
             s=10,  # markersize
             c=None,  # when z is set, c=z
@@ -256,7 +251,7 @@ def scatter(fig, ax,
                    edgecolors='k',
                    lw=s / 20,
                    rasterized=True,
-                   **plt_kwargs
+                   **plt_args
                    )
 
     img = ax.scatter(x[select], y[select], c=c,
@@ -265,7 +260,7 @@ def scatter(fig, ax,
                      vmin=vmin, vmax=vmax,
                      rasterized=True,
                      # edgecolors='None'
-                     **plt_kwargs
+                     **plt_args
                      )
     """
     ax.scatter(radius_in_kpcold,gobs,marker='o',s=70, edgecolor='C9',alpha=0.8,
@@ -305,8 +300,8 @@ def bin_map(x, y, z=None,
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
 
-    if kwargs.get('plt_kwargs') is not None:
-        raise ValueError('plt_kwargs is not allowed in bin_map. Use img_kwargs and contour_kwargs instead.')
+    if kwargs.get('plt_args') is not None:
+        raise ValueError('plt_args is not allowed in bin_map. Use img_kwargs and contour_kwargs instead.')
 
     if z is None:
         z_map = attr.array2column(z_map, name='hist')
@@ -317,44 +312,43 @@ def bin_map(x, y, z=None,
         if plot_img:
             z_map_with_nan = attr.sift(z_map, min_=0, inplace=False)
             fig, ax = img(x_edges, y_edges, z_map_with_nan,
-                          plt_kwargs=img_kwargs, select=select, **kwargs)
+                          plt_args=img_kwargs, select=select, **kwargs)
             kwargs['fig_ax'] = (fig, ax)
         if plot_contour:
             # kwargs['cmap'] = None
             fig, ax = contour(x_edges, y_edges, z_map,
-                              plt_kwargs=contour_kwargs, select=select,
+                              plt_args=contour_kwargs, select=select,
                               **kwargs)
     else:
         z_map = attr.array2column(z_map, meta_from=z)
         if plot_img:
             fig, ax = img(x_edges, y_edges, z_map,
-                          plt_kwargs=img_kwargs, select=select, **kwargs)
+                          plt_args=img_kwargs, select=select, **kwargs)
             kwargs['fig_ax'] = (fig, ax)
         # kwargs['cmap'] = None
         if plot_contour == 1:
             fig, ax = contour(x_edges, y_edges, z_map,
-                              plt_kwargs=contour_kwargs, select=select, **kwargs)
+                              plt_args=contour_kwargs, select=select, **kwargs)
         elif plot_contour == 2:
             hist_map, x_edges, y_edges = calc.bin_map(x, y, **kwargs)
             fig, ax = contour(x_edges, y_edges, hist_map,
-                              plt_kwargs=contour_kwargs, select=select, **kwargs)
+                              plt_args=contour_kwargs, select=select, **kwargs)
     return fig, ax
 
 
 # %% func: plot 1d hist
 @set_plot()
-def _bar(fig, ax, x, y, plt_kwargs=dict(), y_log=False, **kwargs):
+def _bar(fig, ax, x, y, plt_args, y_log=False, **kwargs):
     if y_log:
         ax.set_yscale('log')
-    print(kwargs)
-    img = ax.bar(x, y, width=x[1] - x[0], **plt_kwargs)
+    img = ax.bar(x, y, width=x[1] - x[0], **plt_args)
     return img
 
 
 def hist(x,
          # select=slice(None),
          y_log=False,
-         plt_kwargs=dict(),
+         plt_args=dict(),
          **kwargs):
     """
         x_label=r'$X$',
@@ -384,7 +378,7 @@ def hist(x,
 
     fig, ax = _bar(x_center, h,
                    # select=select,
-                   plt_kwargs=plt_kwargs,
+                   plt_args=plt_args,
                    **kwargs)
     ax.errorbar(x_center, h, yerr=h_err, ls='', markersize=0, elinewidth=1.5, ecolor='k')
     return fig, ax
@@ -395,7 +389,7 @@ def hist(x,
 def errorbar(fig, ax, x_edges, y_means, y_err=None,
              marker='o', markersize=7,
              c_err='tab:blue',
-             plt_kwargs=dict(), **kwargs):
+             plt_args=dict(), **kwargs):
     """
     This is to plot mean with std, not for individual points.
     """
@@ -403,7 +397,7 @@ def errorbar(fig, ax, x_edges, y_means, y_err=None,
     x_centers = (x_edges[1:] + x_edges[:-1]) / 2
     img = ax.errorbar(x_centers, y_means, yerr=y_err,
                       marker=marker, markersize=markersize,
-                      c=c_err, **plt_kwargs)
+                      c=c_err, **plt_args)
     return img
 
 
@@ -412,8 +406,8 @@ def bin_x(x, y, plot_scatter=False, func=None,
           errorbar_kwargs=dict(), scatter_kwargs=dict(),
           **kwargs):
 
-    if kwargs.get('plt_kwargs') is not None:
-        raise ValueError('plt_kwargs is not allowed in bin_map. Use img_kwargs and contour_kwargs instead.')
+    if kwargs.get('plt_args') is not None:
+        raise ValueError('plt_args is not allowed in bin_map. Use img_kwargs and contour_kwargs instead.')
 
     select = attr.combine_selections(select, reference=x)
     x = x[select]
@@ -435,14 +429,14 @@ def bin_x(x, y, plot_scatter=False, func=None,
     x_edges = attr.array2column(x_edges, meta_from=x)
     ys = attr.array2column(ys, meta_from=y)
 
-    fig, ax = errorbar(x_edges, ys, y_err=y_std, plt_kwargs=errorbar_kwargs,
+    fig, ax = errorbar(x_edges, ys, y_err=y_std, plt_args=errorbar_kwargs,
                        **kwargs)
     kwargs.pop('fig_ax', None)
 
     if plot_scatter:
         c = kwargs.pop('c', 'silver')
         fig, ax = scatter(x, y, z=None, fig_ax=(fig, ax),
-                          c=c, plt_kwargs=scatter_kwargs,
+                          c=c, plt_args=scatter_kwargs,
                           **kwargs)
 
     return fig, ax
@@ -450,7 +444,7 @@ def bin_x(x, y, plot_scatter=False, func=None,
 
 # %% func: loess2d
 @set_plot(special_suffix='loess')
-def loess(fig, ax, x, y, z, plt_kwargs, border=True,
+def loess(fig, ax, x, y, z, plt_args, border=True,
           select=slice(None),
           cmap='RdBu',
           **kwargs):
@@ -474,6 +468,6 @@ def loess(fig, ax, x, y, z, plt_kwargs, border=True,
         zout, wout = loess_2d.loess_2d(x_use, y_use, z_use)  # , npoints=30)
     # plot the bg shadow first, then plot the colors
     if border:
-        ax.scatter(x_use, y_use, edgecolors='k', lw=4.5, s=s, rasterized=True, **plt_kwargs)
-    img = ax.scatter(x_use, y_use, c=zout, cmap=cmap, lw=0, s=s, rasterized=True, **plt_kwargs)
+        ax.scatter(x_use, y_use, edgecolors='k', lw=4.5, s=s, rasterized=True, **plt_args)
+    img = ax.scatter(x_use, y_use, c=zout, cmap=cmap, lw=0, s=s, rasterized=True, **plt_args)
     return img

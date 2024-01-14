@@ -272,7 +272,7 @@ def sift(original: np.ndarray | Column | MaskedColumn,
 # %% func: choose_value
 def choose_value(kwargs: dict,
                  xyz_attr_str: str,
-                 xyz: Column,
+                 xyz: Column | None,
                  attr_str: str,
                  func_or_default=None,
                  *func_args):
@@ -281,9 +281,10 @@ def choose_value(kwargs: dict,
     Update it in `kwargs` and return the value.
     Priorities:
         1st: use the one set in **kwargs (like kwargs['x_left']) when the function is called,
-        2nd: use the attribute in column.meta,
-        3rd: use the default value, to get which a function calculation may be required,
-        4th: None.
+        2nd: None if xyz is None,
+        3rd: use the attribute in xyz.meta,
+        4th: use the default value, to get which a function calculation may be required,
+        5th: None.
 
     Examples
     --------
@@ -305,7 +306,7 @@ def choose_value(kwargs: dict,
         Should be set to None if this priority is not considered.
 
     xyz: can be either np.array or Column, e.g. x, y, sfr
-    attr_str: the name of an attribute from column.meta, e.g. 'label', 'left'
+    attr_str: the name of an attribute from xyz.meta, e.g. 'label', 'left'
     func_or_default: the default value, or a function to calc the defalut value. `None` if no default is to be set.
     func_args: a set of args passed to func_to_calc_default when a further calculation is required.
     """
@@ -322,14 +323,17 @@ def choose_value(kwargs: dict,
     # 1st prior: from kwargs
     if xyz_attr_is_in_kwargs:
         return kwargs.get(xyz_attr_str)
-    # 2nd prior: from column meta
+    # 2nd prior: None if xyz is None
+    if xyz is None:
+        return _update_kwargs_and_return(None)
+    # 3rd prior: from column meta
     if hasattr(xyz, 'meta') and xyz.meta.get(attr_str) is not None:
         attr_value = xyz.meta[attr_str]
         return _update_kwargs_and_return(attr_value)
-    # 4th prior: None
+    # 5th prior: None
     if func_or_default is None:
         return _update_kwargs_and_return(None)
-    # 3rd prior: calc default
+    # 4th prior: calc default
     if callable(func_or_default):
         return _update_kwargs_and_return(func_or_default(*func_args))
     return _update_kwargs_and_return(func_or_default)
@@ -379,11 +383,11 @@ def get_default(xyz, xyz_str, attr_str, kwargs, set_default):
 def set_values(to_set=[], set_default=False):
     """
     to_set is like ['x_step', 'y_label']
+    if y or z is None, the calculation is automatically skipped through the choose_value function.
     """
     def decorate(called_func):
         @wraps(called_func)
-        # only takes called_func with x and y. No more, no less.
-        def set_values_core(x, y, *args, **kwargs):
+        def set_values_core(x, y=None, z=None, *args, **kwargs):
             # to_set_split is like [['x', 'step'], ['y', 'label']]
             to_set_split = [i.split('_') for i in to_set]
             # clean up to_set_split, remove the ones with wrong length and leave the ones like ['x', 'step']
@@ -397,7 +401,7 @@ def set_values(to_set=[], set_default=False):
                 # refresh kwargs
                 get_default(xyz, xyz_str, attr_str, kwargs, set_default)
             # now that all the kwargs are refreshed, call the function
-            func_return = called_func(x, y, *args, **kwargs)
+            func_return = called_func(x, y=y, z=z, *args, **kwargs)
             return func_return
         return set_values_core
     return decorate

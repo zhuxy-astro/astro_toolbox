@@ -9,6 +9,8 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import threading
 from queue import Queue
+from multiprocessing.pool import ThreadPool
+from functools import partial
 
 # unify the usage of progress bar
 # using the astropy progress bar will partly mess up the output in multiprocessing
@@ -27,10 +29,10 @@ except ImportError:
         bar.update()
 
 
-# %% class Survey
-class Survey:
+# %% class _SurveyBase
+class _SurveyBase:
     """Base class for surveys.
-    The setting of table is not necessary when using show_img or get_url.
+    The setting of table is not necessary when using show_fig or get_url.
     The ra and dec is always required, and should be in degrees.
     """
     def _rename_col(self, possible_names, new_name):
@@ -44,7 +46,7 @@ class Survey:
     def __init__(self, table=None):
         """table could be an astropy table or a row
         """
-        self.timeout = 30  # seconds. Different surveys may need different timeout
+        self._TIMEOUT = 30  # seconds. Different surveys may need different timeout
 
         if table is None:
             self._table = None
@@ -78,28 +80,30 @@ class Survey:
 
     def _get_response(self, table_row):
         url = self.get_url(table_row)
-        response = requests.get(url, stream=True, timeout=self.timeout)
+        response = requests.get(url, stream=True, timeout=self._TIMEOUT)
         return response
 
-    def show_img(self, table_row):
+    def show_fig(self, table_row, timeout=None):
         """show the image in plt.
         Setting of table is not necessary when using this function.
         """
+        if timeout is not None:
+            self._TIMEOUT = timeout
+
         response = self._get_response(table_row)
-        img = Image.open(response.raw)
+        fig = Image.open(response.raw)
 
         fig = plt.figure(figsize=(6.4, 4.8))
         ax = fig.add_subplot(111)
         ax.set_title(self._get_name(table_row),
                      fontfamily='sans-serif', fontsize=16)
-        ax.imshow(img)
+        ax.imshow(fig)
         ax.set_xticks([])
         ax.set_yticks([])
         fig.show()
 
-    def _get_one_img(
-        self,
-        table_row, failed_queue,
+    def _get_one_fig(
+        self, table_row, failed_table,
         savedir, filename,
         overwrite, bar,
     ):
@@ -115,78 +119,66 @@ class Survey:
         # putting try inside this function can avoid error raising in multitasking
         try:
             response = self._get_response(table_row)
-            img = response.content
+            response.raise_for_status()
+            fig = response.content
             with open(savepath, 'wb') as f:
-                f.write(img)
+                f.write(fig)
             update(bar)
         except Exception:
-            failed_queue.put(table_row)
+            failed_table.add_row(table_row)
 
-    def _get_imgs_once(self, task_queue, **kwargs):
+    def _get_figs_once(self, task_table, failed_table, **kwargs):
         """download and write multiple images using multiple threads
-        everything in kwargs will be passed to _get_one_img
+        everything in kwargs will be passed to _get_one_fig
         """
-        threads = []
-        failed_queue = Queue()
-        while not task_queue.empty():
-            table_row = task_queue.get()
-            download_thread = threading.Thread(
-                target=self._get_one_img,
-                args=(table_row, failed_queue),
-                kwargs=kwargs
-            )
+        pool = ThreadPool(50)
+        func = partial(self._get_one_fig, failed_table=failed_table, **kwargs)
+        pool.map(func, task_table)
+        pool.close()
+        pool.join()
+        return failed_table
 
-            download_thread.daemon = True
-            download_thread.start()
-            threads.append(download_thread)
-            task_queue.task_done()
-        # wait for all threads to finish
-        task_queue.join()
-        for t in threads:
-            t.join()
-        return failed_queue
-
-    def get_imgs(self, savedir='img', overwrite=False, filename=None, try_loops=3):
+    def get_figs(self, savedir='img', overwrite=False, filename=None, try_loops=3, timeout=None):
         """filename is set to Survey._get_name(table_row) + '.jpg' by default
         """
+        if timeout is not None:
+            self._TIMEOUT = timeout
+
         if not os.path.exists(savedir):
             os.mkdir(savedir)
 
-        task_queue = Queue()
-        for table_row in self._table:
-            task_queue.put(table_row)
+        task_table = self._table.copy()
 
-        with progressbar(task_queue.qsize()) as bar:
+        with progressbar(len(task_table)) as bar:
             try_i = 0
-            while try_i < try_loops and task_queue.qsize() > 0:
-                try_i += 1
-                print(f"Try {try_i}. {task_queue.qsize()} images to download ...\n")
-                # the failed queue will be used as the new task queue
-                task_queue = self._get_imgs_once(
-                    task_queue,
+            for try_i in range(try_loops):
+                num_left = len(task_table)
+                if num_left == 0:
+                    break
+                print(f"Try {try_i}. {num_left} images to download ...\n")
+                failed_table = Table(names=self._table.colnames, dtype=self._table.dtype)
+                # the failed table will be used as the new task table
+                task_table = self._get_figs_once(
+                    task_table, failed_table,
                     savedir=savedir, filename=filename,
                     overwrite=overwrite,
                     bar=bar,
                 )
-
-        # save the failed table
-        failed_table = Table(names=self._table.colnames, dtype=self._table.dtype)
-        for table_row in task_queue.queue:
-            failed_table.add_row(table_row)
+                # task_table = failed_table.copy()
 
         print(f'Done. {len(failed_table)} items failed.')
         return failed_table
 
 
 # %% class SDSS
-class SDSS(Survey):
+class SDSS(_SurveyBase):
     def _get_sdss_name(self, table_row):
         name = f"{table_row['plate']},{table_row['mjd']},{table_row['fiber']}"
         return name
 
     def __init__(self, *args, **kwargs):
-        Survey.__init__(self, *args, **kwargs)
-        self.timeout = 15
+        _SurveyBase.__init__(self, *args, **kwargs)
+        self._TIMEOUT = 15
         if self._table is None:
             return
         self._rename_col(['plate', 'plateid', 'plate_id', 'PLATE', 'PLATEID', 'PLATE_ID'], 'plate')
