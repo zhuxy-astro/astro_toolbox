@@ -7,8 +7,6 @@ import os
 from astropy.table import Table
 from PIL import Image
 import matplotlib.pyplot as plt
-import threading
-from queue import Queue
 from multiprocessing.pool import ThreadPool
 from functools import partial
 
@@ -37,6 +35,7 @@ class _SurveyBase:
     """
     def _rename_col(self, possible_names, new_name):
         """convert possible variations of column names to a standard name
+        OK if there is no match.
         """
         for name in possible_names:
             if name in self._table.colnames:
@@ -60,18 +59,20 @@ class _SurveyBase:
         # converting ra and dec
         self._rename_col(['ra', 'RA'], 'ra')
         self._rename_col(['dec', 'DEC', 'Dec'], 'dec')
-        assert set(['ra', 'dec']).issubset(self._table.colnames), \
-            'table should include ra and dec'
+        # assert set(['ra', 'dec']).issubset(self._table.colnames), \
+        # 'table should include ra and dec'
 
     def _short_ra_dec(self, ra_or_dec):
         return f'{ra_or_dec:.4f}'
 
-    def _get_name(self, table_row):
+    def _get_name_ra_dec(self, table_row):
         """default name based on ra and dec
         """
         name = (f'RA{self._short_ra_dec(table_row["ra"])},'
                 f'Dec{self._short_ra_dec(table_row["dec"])}')
         return name
+
+    _get_name = _get_name_ra_dec
 
     def get_url(self, table_row, *args, **kwargs):
         """always different for different surveys
