@@ -105,21 +105,22 @@ class _SurveyBase:
         self._rename_col()
         self._check_required_cols()
 
-    def _set_naming_priority(self, table_row, *nameing_methods):
+    def _set_naming_priority(self, table_row, naming_methods_list):
         """used to define naming seq for different surveys.
         """
-        for naming_method in nameing_methods:
+        for naming_method in nameing_methods_list:
             try:
                 return naming_method.get(table_row)
             except ValueError:
-                if naming_method is nameing_methods[-1]:
+                if naming_method is naming_methods_list[-1]:
                     raise ValueError(f'No valid naming method for {table_row}')
                 continue
 
+    @classmethod  # wish this would work
     def naming_seq(self, table_row):
         """the default naming is RA and Dec
         """
-        return self._set_naming_priority(table_row, self.name_ra_dec)
+        return self._set_naming_priority(table_row, (self.name_ra_dec))
 
     def get_url(self, table_row, *args, **kwargs):
         """always different for different surveys
@@ -254,10 +255,11 @@ class SDSS(_SurveyBase):
         if self._table is None:
             return
 
+    @classmethod
     def naming_seq(self, table_row):
         return self._set_naming_priority(table_row,
-                                         self.name_plate_mjd_fiber,
-                                         self.name_ra_dec)
+                                         (self.name_plate_mjd_fiber,
+                                         self.name_ra_dec))
 
 
 class SDSSImg(SDSS):
@@ -285,12 +287,13 @@ class SDSSSpec(SDSS):
         SDSS.__init__(self, *args, required_cols=['specobjid'], **kwargs)
         self.name_specobjid = Naming(['specobjid'], 'specid{0}')
 
+    @classmethod
     def naming_seq(self, table_row):
         return (self._set_naming_priority(table_row,
-                                          self.name_plate_mjd_fiber,
+                                          (self.name_plate_mjd_fiber,
                                           self.name_ra_dec,
                                           self.name_specobjid,
-                                          )
+                                          ))
                 + 'spec')
 
     def get_url(self, table_row, dr='dr17'):
