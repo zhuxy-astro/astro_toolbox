@@ -46,6 +46,8 @@ class _SurveyBase:
         """table could be an astropy table or a row
         """
         self._TIMEOUT = 30  # seconds. Different surveys may need different timeout
+        self._THREADS = 50  # number of threads for downloading images
+        self._FILE_SUFFIX = '.jpg'
 
         if table is None:
             self._table = None
@@ -111,7 +113,7 @@ class _SurveyBase:
         """download and write one image
         """
         if filename is None:
-            filename = self._get_name(table_row) + '.jpg'
+            filename = self._get_name(table_row) + self._FILE_SUFFIX
         savepath = os.path.join(savedir, filename)
         if not overwrite and os.path.exists(savepath):
             update(bar)
@@ -120,6 +122,7 @@ class _SurveyBase:
         # putting try inside this function can avoid error raising in multitasking
         try:
             response = self._get_response(table_row)
+            # TODO: when to raise?
             response.raise_for_status()
             fig = response.content
             with open(savepath, 'wb') as f:
@@ -132,7 +135,7 @@ class _SurveyBase:
         """download and write multiple images using multiple threads
         everything in kwargs will be passed to _get_one_fig
         """
-        pool = ThreadPool(50)
+        pool = ThreadPool(self._THREADS)
         func = partial(self._get_one_fig, failed_table=failed_table, **kwargs)
         pool.map(func, task_table)
         pool.close()
@@ -185,11 +188,16 @@ class SDSS(_SurveyBase):
         self._rename_col(['plate', 'plateid', 'plate_id', 'PLATE', 'PLATEID', 'PLATE_ID'], 'plate')
         self._rename_col(['mjd', 'MJD'], 'mjd')
         self._rename_col(['fiber', 'fiberid', 'fiber_id', 'FIBER', 'FIBERID', 'FIBER_ID'], 'fiber')
-        if set(['plate', 'mjd', 'fiber']).issubset(self._table.colnames):
-            self._get_name = self._get_sdss_name
+        self._rename_col(['specobjid', 'SPECOBJID', 'specobj_id', 'SPECOBJ_ID', 'spec_id', 'SPEC_ID', 'specid', 'SPECID'],
+                         'specobjid')
+
+
+class SDSSImg(SDSS):
+    if set(['plate', 'mjd', 'fiber']).issubset(self._table.colnames):
+        self._get_name = self._get_sdss_name
 
     def get_url(self, table_row, scale=0.2, length=200, opt=''):
-        """ra, dec are in degrees
+        """
         `opt` sets the mark on the image. 'G' for galaxy with crosses, 'S' for star with a red square.
         example:
         https://skyserver.sdss.org/dr17/SkyServerWS/ImgCutout/getjpeg?TaskName=Skyserver.Explore.Image&ra=195.299786348959%20&dec=29.6641012044628&scale=0.2&width=200&height=200&opt=G
@@ -201,5 +209,27 @@ class SDSS(_SurveyBase):
             f"ra={ra}%20&dec={dec}&scale={scale}&width={length}&height={length}&opt={opt}")
         return url
 
+
+class SDSSSpec(SDSS):
+    def __init__(self, *args, **kwargs):
+        SDSS.__init__(self, *args, **kwargs)
+        assert 'specobjid' in self._table.colnames, \
+            'table should include specobjid'
+
+    # TODO: if no matching? if nan value? save filename?
+    # TODO: what is it like in plt?
+    def _get_name(self, table_row):
+        return self._get_name(table_row) + 'spec'
+
+    def get_url(self, table_row):
+        """
+        example:
+        https://skyserver.sdss.org/dr17/en/get/SpecById.ashx?id=320932083365079040
+        """
+        specobjid = table_row['specobjid']
+        url = f"https://skyserver.sdss.org/dr17/en/get/SpecById.ashx?id={specobjid}"
+        return url
+
 # %% class DESI
-# TODO : if matching failed? Save into jpg.
+# TODO: if matching failed, what is the response in requests?
+# TODO: find a scale.
