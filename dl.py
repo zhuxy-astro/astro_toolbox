@@ -89,8 +89,6 @@ class _SurveyBase:
         # rename ra and dec by default
         self._rename_dict = {'ra': ['ra', 'RA'], 'dec': ['dec', 'DEC', 'Dec']}
         self._rename_dict.update(rename_dict)
-        # RA and Dec as default naming method
-        self.name_ra_dec = Naming(['ra', 'dec'], 'RA{0:.4f}, Dec{1:.4f}')
 
         if table is None:
             self._table = None
@@ -105,10 +103,13 @@ class _SurveyBase:
         self._rename_col()
         self._check_required_cols()
 
+    # RA and Dec as default naming method
+    name_ra_dec = Naming(['ra', 'dec'], 'RA{0:.4f}, Dec{1:.4f}')
+
     def _set_naming_priority(self, table_row, naming_methods_list):
         """used to define naming seq for different surveys.
         """
-        for naming_method in nameing_methods_list:
+        for naming_method in naming_methods_list:
             try:
                 return naming_method.get(table_row)
             except ValueError:
@@ -237,10 +238,6 @@ class _SurveyBase:
 
 # %% class SDSS
 class SDSS(_SurveyBase):
-    def _get_plate_mjd_fiber_name(self, table_row):
-        name = f"{table_row['plate']},{table_row['mjd']},{table_row['fiber']}"
-        return name
-
     def __init__(self, *args, **kwargs):
         _SDSS_RENAME_DICT = {
             'plate': ['plate', 'plateid', 'plate_id', 'PLATE', 'PLATEID', 'PLATE_ID'],
@@ -251,22 +248,21 @@ class SDSS(_SurveyBase):
         }
         _SurveyBase.__init__(self, *args, rename_dict=_SDSS_RENAME_DICT, **kwargs)
         self._TIMEOUT = 15
-        self.name_plate_mjd_fiber = Naming(['plate', 'mjd', 'fiber'], '{0}, {1}, {2}')
         if self._table is None:
             return
 
+    name_plate_mjd_fiber = Naming(['plate', 'mjd', 'fiber'], '{0}, {1}, {2}')
+
     @classmethod
-    def naming_seq(self, table_row):
-        return self._set_naming_priority(table_row,
-                                         (self.name_plate_mjd_fiber,
-                                         self.name_ra_dec))
+    def naming_seq(cls, table_row):
+        return cls._set_naming_priority(cls, table_row,
+                                        (cls.name_plate_mjd_fiber,
+                                         cls.name_ra_dec))
 
 
 class SDSSImg(SDSS):
     def __init__(self, *args, **kwargs):
         SDSS.__init__(self, *args, required_cols=['ra', 'dec'], **kwargs)
-        if set(['plate', 'mjd', 'fiber']).issubset(self._table.colnames):
-            self._get_name = self._get_plate_mjd_fiber_name
 
     def get_url(self, table_row, dr='dr17', scale=0.2, length=200, opt=''):
         """
@@ -285,15 +281,16 @@ class SDSSImg(SDSS):
 class SDSSSpec(SDSS):
     def __init__(self, *args, **kwargs):
         SDSS.__init__(self, *args, required_cols=['specobjid'], **kwargs)
-        self.name_specobjid = Naming(['specobjid'], 'specid{0}')
+
+    name_specobjid = Naming(['specobjid'], 'specid{0}')
 
     @classmethod
     def naming_seq(self, table_row):
         return (self._set_naming_priority(table_row,
                                           (self.name_plate_mjd_fiber,
-                                          self.name_ra_dec,
-                                          self.name_specobjid,
-                                          ))
+                                           self.name_ra_dec,
+                                           self.name_specobjid,
+                                           ))
                 + 'spec')
 
     def get_url(self, table_row, dr='dr17'):
