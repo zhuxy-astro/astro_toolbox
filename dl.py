@@ -39,7 +39,7 @@ class Naming:
     def get(self, table_row):
         """when a rule is set, return the name for a specific row, or raise ValueError.
         The error raised here only means that the row doesn't fit this specific rule, but other rules may apply.
-        So the error is catched in _set_naming_priority.
+        So the error is catched in set_naming_priority.
         """
         value_list = []
         for col_name in self.col_name_list:
@@ -103,10 +103,11 @@ class _SurveyBase:
         self._rename_col()
         self._check_required_cols()
 
-    # RA and Dec as default naming method
+    # RA and Dec are the default naming method
     name_ra_dec = Naming(['ra', 'dec'], 'RA{0:.4f}, Dec{1:.4f}')
 
-    def _set_naming_priority(self, table_row, naming_methods_list):
+    @staticmethod
+    def set_naming_priority(table_row, naming_methods_list):
         """used to define naming seq for different surveys.
         """
         for naming_method in naming_methods_list:
@@ -117,12 +118,13 @@ class _SurveyBase:
                     raise ValueError(f'No valid naming method for {table_row}')
                 continue
 
-    @classmethod  # wish this would work
-    def naming_seq(self, table_row):
+    @classmethod
+    def naming_seq(cls, table_row):
         """the default naming is RA and Dec
         """
-        return self._set_naming_priority(table_row, (self.name_ra_dec))
+        return cls.set_naming_priority(table_row, (cls.name_ra_dec))
 
+    @staticmethod
     def get_url(self, table_row, *args, **kwargs):
         """always different for different surveys
         """
@@ -131,8 +133,10 @@ class _SurveyBase:
     def _get_response(self, table_row):
         url = self.get_url(table_row)
         response = requests.get(url, stream=True, timeout=self._TIMEOUT)
+        response.raise_for_status()
         return response
 
+    # TODO: setting staticmethod here may require the default timeout and naming_seq are pre-set
     def show_fig(self, table_row, timeout=None, naming_seq=None):
         """show the image in plt.
         Setting of table is not necessary when using this function.
@@ -177,7 +181,6 @@ class _SurveyBase:
         try:
             response = self._get_response(table_row)
             # TODO: when to raise? If the pic is empty but still returned? What is the good codes?
-            response.raise_for_status()
             fig = response.content
             with open(savepath, 'wb') as f:
                 f.write(fig)
@@ -255,16 +258,17 @@ class SDSS(_SurveyBase):
 
     @classmethod
     def naming_seq(cls, table_row):
-        return cls._set_naming_priority(cls, table_row,
-                                        (cls.name_plate_mjd_fiber,
-                                         cls.name_ra_dec))
+        return cls.set_naming_priority(table_row,
+                                       (cls.name_plate_mjd_fiber,
+                                        cls.name_ra_dec))
 
 
 class SDSSImg(SDSS):
     def __init__(self, *args, **kwargs):
         SDSS.__init__(self, *args, required_cols=['ra', 'dec'], **kwargs)
 
-    def get_url(self, table_row, dr='dr17', scale=0.2, length=200, opt=''):
+    @staticmethod
+    def get_url(table_row, dr='dr17', scale=0.2, length=200, opt=''):
         """
         `opt` sets the mark on the image. 'G' for galaxy with crosses, 'S' for star with a red square.
         example:
@@ -285,15 +289,16 @@ class SDSSSpec(SDSS):
     name_specobjid = Naming(['specobjid'], 'specid{0}')
 
     @classmethod
-    def naming_seq(self, table_row):
-        return (self._set_naming_priority(table_row,
-                                          (self.name_plate_mjd_fiber,
-                                           self.name_ra_dec,
-                                           self.name_specobjid,
-                                           ))
+    def naming_seq(cls, table_row):
+        return (cls.set_naming_priority(table_row,
+                                        (cls.name_plate_mjd_fiber,
+                                         cls.name_ra_dec,
+                                         cls.name_specobjid,
+                                         ))
                 + 'spec')
 
-    def get_url(self, table_row, dr='dr17'):
+    @staticmethod
+    def get_url(table_row, dr='dr17'):
         """
         example:
         https://skyserver.sdss.org/dr17/en/get/SpecById.ashx?id=320932083365079040
@@ -308,7 +313,8 @@ class DESIImg(_SurveyBase):
     def __init__(self, *args, **kwargs):
         _SurveyBase.__init__(self, *args, required_cols=['ra', 'dec'], **kwargs)
 
-    def get_url(self, table_row, layer='ls-dr9', bands='grz', pixscale=0.2, size=200):
+    @staticmethod
+    def get_url(table_row, layer='ls-dr9', bands='grz', pixscale=0.2, size=200):
         """
         example:
         """
