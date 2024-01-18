@@ -32,7 +32,8 @@ except ImportError:
 class Naming:
     """set rules for one specific naming method
     """
-    def __init__(self, col_name_list, string_format):
+    def __init__(self, col_name_list, string_format=''):
+        # empty string_format is used when I just want to check the validity of the col_name_list in the table_row
         self.col_name_list = col_name_list
         self.string_format = string_format
 
@@ -59,11 +60,41 @@ class Naming:
 # %% class _SurveyBase
 class _SurveyBase:
     """Base class for surveys.
-    The setting of table is not necessary when using show_fig or get_url.
-    The ra and dec hould be in degrees, and are renamed by default.
-    When initiallizing a new survey, set the columns to be renamed and the required columns.
+    The ra and dec should be in degrees.
+
+    Usage:
+    - Download one image and show in plt:
+    `dl.SDSSImg.show_fig(table_row, timeout=None, naming_seq=None)`
+    - Get the url for one image:
+    `dl.SDSSImg.get_url(table_row, dr='dr17', scale=0.2, length=200, opt='')`
+    - Download multiple images:
+    ```
+    failed_table, invalid_table = dl.SDSSImg(table).get_figs(
+        savedir='img', overwrite=False, naming_seq=None, suffix='',
+        try_loops=3, timeout=None)
+    ```
+    If another naming sequence is needed, use it in the function arg like
+    `naming_seq=dl.SDSSImg.naming_seq`
+
+    When initiallizing a new survey:
+        - The `_required_cols` (in a list) should be set before the __init__
+        method.
+        - Set the url for downloading images in the `get_url` method, and set
+        it as a static method.
+        - (Optional) Set the columns to be renamed (in a dict) when
+        initializing. RA and Dec are renamed by default. `__init__` method
+        does not need to be called again if no more renaming other than RA and
+        Dec is needed.
+        - (Optional) Set the naming sequence `naming_seq` using the
+        `set_naming_priority` method. The default is RA and Dec only. Set it
+        as a class method.
+        - (Optional) If a new naming rule is needed, define it using the
+        `Naming` class, and put it outside the `__init__` method.
+        - (Optional) New `_timeout`, `_threads`, and `_extension` should also
+        be set outside the `__init__` method. These are not to be changed
+        within one survey.
     """
-    def _rename_col(self):
+    def _rename_cols(self):
         """convert possible variations of column names to a standard name
         OK if there is no match.
         """
@@ -79,13 +110,22 @@ class _SurveyBase:
         assert set(self._required_cols).issubset(self._table.colnames), \
             'table should include: ' + ', '.join(self._required_cols)
 
-    def __init__(self, table=None, required_cols=[], rename_dict={}):
+    # default parameters for all surveys
+    _required_cols = []  # this is set outside of __init__ because classmethod set_naming_priority uses this
+
+    # RA and Dec are the default naming method. It is defined in the class, not in the instance.
+    name_ra_dec = Naming(['ra', 'dec'], 'RA{0:.4f}, Dec{1:.4f}')
+
+    # not going to change this unless when defining a new survey
+    _timeout = 30  # seconds. Different surveys may need different timeout
+    _threads = 50  # number of threads for downloading images
+    _extension = '.jpg'
+
+    def __init__(self, table=None, rename_dict={}):
         """table could be an astropy table or a row
+        `table` is given when the class is initialized,
+        `rename_dict` is given when a survey child class is defined.
         """
-        self._TIMEOUT = 30  # seconds. Different surveys may need different timeout
-        self._THREADS = 50  # number of threads for downloading images
-        self._FILE_SUFFIX = '.jpg'
-        self._required_cols = required_cols
         # rename ra and dec by default
         self._rename_dict = {'ra': ['ra', 'RA'], 'dec': ['dec', 'DEC', 'Dec']}
         self._rename_dict.update(rename_dict)
@@ -100,54 +140,74 @@ class _SurveyBase:
         else:
             self._table = Table(table)
 
-        self._rename_col()
+        self._rename_cols()
         self._check_required_cols()
 
-    # RA and Dec are the default naming method
-    name_ra_dec = Naming(['ra', 'dec'], 'RA{0:.4f}, Dec{1:.4f}')
-
-    @staticmethod
-    def set_naming_priority(table_row, naming_methods_list):
+    @classmethod
+    def set_naming_priority(cls, table_row, naming_methods_list, required_cols=None):
         """used to define naming seq for different surveys.
+        returns a string or raises ValueError.
         """
+        if required_cols is None:
+            required_cols = cls._required_cols
+        # if the row doesn't have all required_cols, ValueError will be raised
+        _ = Naming(required_cols).get(table_row)
+
         for naming_method in naming_methods_list:
             try:
                 return naming_method.get(table_row)
             except ValueError:
-                if naming_method is naming_methods_list[-1]:
+                if naming_method is naming_methods_list[-1]:  # the last try
                     raise ValueError(f'No valid naming method for {table_row}')
+                # during the loop, continue to try names
                 continue
 
     @classmethod
     def naming_seq(cls, table_row):
-        """the default naming is RA and Dec
+        """the default naming is RA and Dec.
+        This is a class method because it reads the naming rules from the class.
+        returns a string or raises ValueError following `set_naming_priority`.
         """
-        return cls.set_naming_priority(table_row, (cls.name_ra_dec))
+        return cls.set_naming_priority(table_row, [cls.name_ra_dec])
 
     @staticmethod
-    def get_url(self, table_row, *args, **kwargs):
+    def get_url(table_row, *args, **kwargs):
         """always different for different surveys
         """
         raise NotImplementedError
 
-    def _get_response(self, table_row):
-        url = self.get_url(table_row)
-        response = requests.get(url, stream=True, timeout=self._TIMEOUT)
+    @classmethod
+    def _get_response(cls, table_row, timeout=None):
+        """this is called by show_fig, which is a class method. Therefore this is a class method, too.
+        The reason not to make it static is that it has to read the timeout, which may differ between surveys.
+        """
+        if timeout is None:
+            timeout = cls._timeout
+        url = cls.get_url(table_row)
+        response = requests.get(url, stream=True, timeout=timeout)
         response.raise_for_status()
         return response
 
-    # TODO: setting staticmethod here may require the default timeout and naming_seq are pre-set
-    def show_fig(self, table_row, timeout=None, naming_seq=None):
+    @staticmethod
+    def validate_img(response):
+        """check if the image is valid, if true, return the image.
+        """
+        try:
+            img = Image.open(response.raw)
+        except Image.UnidentifiedImageError:
+            raise ValueError('No valid image returned.')
+        return img
+
+    @classmethod
+    def show_fig(cls, table_row, timeout=None, naming_seq=None):
         """show the image in plt.
         Setting of table is not necessary when using this function.
         """
-        if timeout is not None:
-            self._TIMEOUT = timeout
         if naming_seq is None:
-            naming_seq = self.naming_seq
+            naming_seq = cls.naming_seq
 
-        response = self._get_response(table_row)
-        img = Image.open(response.raw)
+        response = cls._get_response(table_row, timeout=timeout)
+        img = cls.validate_img(response)
 
         fig = plt.figure(figsize=(6.4, 4.8))
         ax = fig.add_subplot(111)
@@ -155,48 +215,54 @@ class _SurveyBase:
                      fontfamily='sans-serif', fontsize=16)
         ax.imshow(img)
         ax.axis('off')
-        # ax.set_xticks([])
-        # ax.set_yticks([])
         fig.show()
 
     def _get_one_fig(
         self, table_row, failed_table, invalid_table,
-        savedir, naming_seq,
-        overwrite, bar,
+        savedir, naming_seq, suffix,
+        overwrite, timeout, bar,
     ):
         """download and write one image
         putting try inside this function can avoid error raising in multitasking
         """
         if naming_seq is None:
             naming_seq = self.naming_seq
+
         try:
-            filename = naming_seq(table_row) + self._FILE_SUFFIX
-        except ValueError:
+            filename = naming_seq(table_row) + suffix + self._extension
+        except ValueError:  # no valid name
             invalid_table.add_row(table_row)
+            update(bar)
+            return
+
         savepath = os.path.join(savedir, filename)
         if not overwrite and os.path.exists(savepath):
             update(bar)
             return
 
+        # TODO: sometimes rows may fail but not in the list
         try:
-            response = self._get_response(table_row)
-            # TODO: when to raise? If the pic is empty but still returned? What is the good codes?
-            fig = response.content
+            response = self._get_response(table_row, timeout=timeout)
+            # _ = self.validate_img(response)  # checking validation using PIL causes error
+            # it might be possible to check if the image is empty, but as SDSS
+            # images have words on empty images, it is not easy to check.
+            img_content = response.content
             with open(savepath, 'wb') as f:
-                f.write(fig)
+                f.write(img_content)
             update(bar)
-        except ValueError:
-            # TODO: this is not raised.
+        except ValueError:  # no valid image, often when the http returns something non-image
             invalid_table.add_row(table_row)
-        except Exception:
-            # TODO: will this catch the above one?
+            update(bar)
+        except Exception:  # as err:  # other errors
+            # print(err)
+            # this will not catch the above ValueError
             failed_table.add_row(table_row)
 
     def _get_figs_once(self, task_table, failed_table, invalid_table, **kwargs):
         """download and write multiple images using multiple threads
         everything in kwargs will be passed to _get_one_fig
         """
-        pool = ThreadPool(self._THREADS)
+        pool = ThreadPool(self._threads)
         func = partial(self._get_one_fig,
                        failed_table=failed_table, invalid_table=invalid_table,
                        **kwargs)
@@ -206,13 +272,10 @@ class _SurveyBase:
         return failed_table, invalid_table
 
     def get_figs(self, savedir='img', overwrite=False,
-                 naming_seq=None, try_loops=3, timeout=None):
+                 naming_seq=None, suffix='', try_loops=3, timeout=None):
         """if naming_seq is None, use the default naming sequence for this survey
-        TODO: doc on the params
+        `suffix` is before the extension but after the naming sequence.
         """
-        if timeout is not None:
-            self._TIMEOUT = timeout
-
         if not os.path.exists(savedir):
             os.mkdir(savedir)
 
@@ -230,8 +293,8 @@ class _SurveyBase:
                 # the failed table will be used as the new task table
                 task_table, invalid_table = self._get_figs_once(
                     task_table, failed_table, invalid_table,
-                    savedir=savedir, naming_seq=naming_seq,
-                    overwrite=overwrite,
+                    savedir=savedir, naming_seq=naming_seq, suffix=suffix,
+                    overwrite=overwrite, timeout=timeout,
                     bar=bar,
                 )
 
@@ -250,22 +313,21 @@ class SDSS(_SurveyBase):
                           'spec_id', 'SPEC_ID', 'specid', 'SPECID'],
         }
         _SurveyBase.__init__(self, *args, rename_dict=_SDSS_RENAME_DICT, **kwargs)
-        self._TIMEOUT = 15
-        if self._table is None:
-            return
 
+    _timeout = 15
     name_plate_mjd_fiber = Naming(['plate', 'mjd', 'fiber'], '{0}, {1}, {2}')
+
+
+class SDSSImg(SDSS):
+
+    _required_cols = ['ra', 'dec']
 
     @classmethod
     def naming_seq(cls, table_row):
         return cls.set_naming_priority(table_row,
-                                       (cls.name_plate_mjd_fiber,
-                                        cls.name_ra_dec))
-
-
-class SDSSImg(SDSS):
-    def __init__(self, *args, **kwargs):
-        SDSS.__init__(self, *args, required_cols=['ra', 'dec'], **kwargs)
+                                       [cls.name_plate_mjd_fiber,
+                                        cls.name_ra_dec],
+                                       )
 
     @staticmethod
     def get_url(table_row, dr='dr17', scale=0.2, length=200, opt=''):
@@ -283,19 +345,18 @@ class SDSSImg(SDSS):
 
 
 class SDSSSpec(SDSS):
-    def __init__(self, *args, **kwargs):
-        SDSS.__init__(self, *args, required_cols=['specobjid'], **kwargs)
 
+    _required_cols = ['specobjid']
     name_specobjid = Naming(['specobjid'], 'specid{0}')
 
     @classmethod
     def naming_seq(cls, table_row):
-        return (cls.set_naming_priority(table_row,
-                                        (cls.name_plate_mjd_fiber,
-                                         cls.name_ra_dec,
-                                         cls.name_specobjid,
-                                         ))
-                + 'spec')
+        return cls.set_naming_priority(table_row,
+                                       [cls.name_plate_mjd_fiber,
+                                        cls.name_ra_dec,
+                                        cls.name_specobjid,
+                                        ],
+                                       )
 
     @staticmethod
     def get_url(table_row, dr='dr17'):
@@ -310,8 +371,15 @@ class SDSSSpec(SDSS):
 
 # %% class DESI
 class DESIImg(_SurveyBase):
-    def __init__(self, *args, **kwargs):
-        _SurveyBase.__init__(self, *args, required_cols=['ra', 'dec'], **kwargs)
+
+    _required_cols = ['ra', 'dec']
+    _threads = 2  # DESI will send status 429 if too many requests are sent
+
+    @classmethod
+    def naming_seq(cls, table_row):
+        return cls.set_naming_priority(table_row,
+                                       [cls.name_ra_dec],
+                                       )
 
     @staticmethod
     def get_url(table_row, layer='ls-dr9', bands='grz', pixscale=0.2, size=200):
