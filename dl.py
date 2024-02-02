@@ -262,6 +262,7 @@ class _SurveyBase:
         """download and write multiple images using multiple threads
         everything in kwargs will be passed to _get_one_fig
         """
+        # TODO: how to quit?
         pool = ThreadPool(self._threads)
         func = partial(self._get_one_fig,
                        failed_table=failed_table, invalid_table=invalid_table,
@@ -287,7 +288,7 @@ class _SurveyBase:
                 num_left = len(task_table)
                 if num_left == 0:
                     break
-                print(f"Try {try_i}. {num_left} images to download ...\n")
+                print(f"Try [{try_i + 1}]. {num_left} images to download ...\n")
                 failed_table = Table(names=self._table.colnames, dtype=self._table.dtype)
                 invalid_table = Table(names=self._table.colnames, dtype=self._table.dtype)
                 # the failed table will be used as the new task table

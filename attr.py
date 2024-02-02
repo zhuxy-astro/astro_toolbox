@@ -98,7 +98,8 @@ def combine_selections(list_of_selects, reference=None):
 
     if list_of_selects_is_empty:
         if reference is not None:
-            return Column(np.ones_like(reference, dtype=bool), name='')
+            # TODO: reference may be masked!
+            return Column(np.ones(len(reference), dtype=bool), name='')
         else:
             return slice(None)  # note that no name is returned here
 
