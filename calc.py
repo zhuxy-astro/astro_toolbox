@@ -6,18 +6,17 @@ import sys
 import numpy as np
 from astropy.cosmology import Planck18, FlatLambdaCDM
 from scipy.interpolate import interp1d
-# from alive_progress import alive_bar
-from astropy.utils.console import ProgressBar
-from . import attr
+from . import attr, misc
 from scipy.spatial import KDTree
 from scipy.optimize import curve_fit as scipy_curve_fit
+from scipy import stats
 
 
 # %% func: choose good and calc min, max, mean and median
-def isgood(array):
-    # returns the indices of values that are not masked, not nan and not infinite.
+def select_good(array):
+    # returns an array of bools indicating whether the values are not masked, not nan and not infinite.
     if hasattr(array, 'copy'):
-        # I don't know why but this function will change the original array.
+        # I don't know why but this function will change the original array without copying.
         array = array.copy()
 
     if hasattr(array, 'mask'):
@@ -30,26 +29,49 @@ def isgood(array):
     return ~mask
 
 
-def select_good_values(array):
-    good_ind = isgood(array)
+def good_values(array):
+    good_ind = select_good(array)
     np_array = np.array(array)  # avoid changing the original array
     return np_array[good_ind]
 
 
 def min(array):
-    return np.nanmin(select_good_values(array))
+    return np.nanmin(good_values(array))
 
 
 def max(array):
-    return np.nanmax(select_good_values(array))
+    return np.nanmax(good_values(array))
 
 
-def mean(array):
-    return np.nanmean(select_good_values(array))
+def mean(array, weights=None):
+    good_ind = select_good(array)
+    np_array = np.array(array)  # avoid changing the original array
+    if weights is None or not any(select_good(weights)) or np.nansum(weights) == 0:
+        return np.average(np_array[good_ind])
+    good_ind &= select_good(weights)
+    np_weights = np.array(weights)  # avoid changing the original array
+    return np.average(np_array[good_ind], weights=np_weights[good_ind])
 
 
-def median(array):
-    return np.nanmedian(select_good_values(array))
+def median(array, weights=None):
+    return weighted_percentile(array, weights=weights)
+
+
+def std(array, weights=None):
+    """ddof=1
+    """
+    good_ind = select_good(array)
+    np_array = np.array(array)  # avoid changing the original array
+    if weights is None or not any(select_good(weights)) or np.nansum(weights) == 0:
+        return np.std(np_array[good_ind], ddof=1)
+    good_ind &= select_good(weights)
+    np_weights = np.array(weights)  # avoid changing the original array
+    np_array = np_array[good_ind]
+    np_weights = np_weights[good_ind]
+    average = mean(np_array, weights=np_weights)
+    variance = mean((np_array - average)**2, weights=np_weights)
+    N = len(np_array)
+    return np.sqrt(variance * N / (N - 1))
 
 
 # %% func: vmax_inv
@@ -84,7 +106,7 @@ def vmax_inv(z_left, z_right, z_min, z_max,
     Vmax = _V(np.maximum(z_left, z_min), np.minimum(z_right, z_max))
     if fill_nan:
         # nan values of z_min and z_max
-        select_bad_zmin_zmax = (~isgood(z_min)) | (~isgood(z_max))
+        select_bad_zmin_zmax = (~select_good(z_min)) | (~select_good(z_max))
         if z is not None:
             # wrong values of z_min and z_max
             select_bad_zmin_zmax |= (z > z_max) | (z < z_min)
@@ -191,140 +213,95 @@ def curve_fit(f, xdata, ydata, *args, **kwargs):
     return scipy_curve_fit(f, xdata[select_good], ydata[select_good], *args, **kwargs)
 
 
-# %% func: bpt
-"""
-OIII range: -1.2 ~ 1.5
-NII range: -2 ~ 1
-SII range: -1.2 ~ 0.8
-OI range: -2.2 ~ 0
-"""
-
-
-def bpt_nii_agn_comp(nii_ha):
-    return 0.61 / (nii_ha - 0.47) + 1.19
-
-
-def bpt_nii_sf_comp(nii_ha):
-    return 0.61 / (nii_ha - 0.05) + 1.3
-
-
-def bpt_nii(nii_ha, oiii_hb):
-    """
-    return: array of ints. 0: sf, 1: composite, 2: agn, nan: nan.
-    """
-    result = np.empty_like(nii_ha)
-    result[:] = np.nan
-
-    select_sf = oiii_hb < bpt_nii_sf_comp(nii_ha)
-    result[select_sf] = 0
-    select_agn = oiii_hb > bpt_nii_agn_comp(nii_ha)
-    result[select_agn] = 2
-    select_comp = oiii_hb >= bpt_nii_sf_comp(nii_ha)
-    select_comp &= oiii_hb <= bpt_nii_agn_comp(nii_ha)
-    result[select_comp] = 1
-    return result
-
-
-def bpt_sii_sf_agn(sii_ha):
-    return 0.72 / (sii_ha - 0.32) + 1.30
-
-
-def bpt_sii_liner_seyfert(sii_ha):
-    return 1.89 * sii_ha + 0.76
-
-
-def bpt_sii(sii_ha, oiii_hb):
-    """
-    return: array of ints. 0: sf, 1: liner, 2: seyfert, nan: nan.
-    """
-    result = np.empty_like(sii_ha)
-    result[:] = np.nan
-
-    select_sf = oiii_hb < bpt_sii_sf_agn(sii_ha)
-    result[select_sf] = 0
-    select_seyfert = oiii_hb >= bpt_sii_sf_agn(sii_ha)
-    select_seyfert &= oiii_hb >= bpt_sii_liner_seyfert(sii_ha)
-    result[select_seyfert] = 2
-    select_liner = oiii_hb >= bpt_sii_sf_agn(sii_ha)
-    select_liner &= oiii_hb < bpt_sii_liner_seyfert(sii_ha)
-    result[select_liner] = 1
-    return result
-
-
-def bpt_oi_sf_agn(oi_ha):
-    return 0.73 / (oi_ha + 0.59) + 1.33
-
-
-def bpt_oi_liner_seyfert(oi_ha):
-    return 1.18 * oi_ha + 1.30
-
-
-def bpt_oi(oi_ha, oiii_hb):
-    """
-    return: array of ints. 0: sf, 1: liner, 2: seyfert, nan: nan.
-    """
-    result = np.empty_like(oi_ha)
-    result[:] = np.nan
-
-    select_sf = oiii_hb < bpt_oi_sf_agn(oi_ha)
-    result[select_sf] = 0
-    select_seyfert = oiii_hb >= bpt_oi_sf_agn(oi_ha)
-    select_seyfert &= oiii_hb >= bpt_oi_liner_seyfert(oi_ha)
-    result[select_seyfert] = 2
-    select_liner = oiii_hb >= bpt_oi_sf_agn(oi_ha)
-    select_liner &= oiii_hb < bpt_oi_liner_seyfert(oi_ha)
-    result[select_liner] = 1
-    return result
-
-
 # %% func: weighted_median
-def weighted_median(data, weights=None):
-    # some contents refer to
-    # https://github.com/tinybike/weightedstats/blob/master/weightedstats/__init__.py
+def weighted_percentile(data=None, weights=None,
+                        select=slice(None), percentile=0.5):
+    """in default calculate the weighted median.
+
+    `percentile` is the percentile of the data (or weights if data=None) ranking from small to large.
+    It can be either a float or a list of floats no larger than 1.
+    The returned value will be consistent with percentile, i.e., a list or a float.
+
+    When data=None, weights is treated as a histogram, and the threshold is calculated such that
+    the sum of the normalized hist<threshold meets the percentile. For binned scatters, it marks the
+    threshold OUT of which the number of points meets the percentile.
+    When data is set, calculate the weighted percentile directly.
+
+    Some contents refer to
+    https://github.com/tinybike/weightedstats/blob/master/weightedstats/__init__.py
+    """
+    # when calculating the percentile in a histogram, only the weights are given.
+    data_is_none = data is None
+    if data_is_none:
+        data = np.arange(np.array(weights).size)
+    else:
+        data = data.copy()
+
+    # select values
+    select = attr.combine_selections(select, reference=data)
+    data = np.where(select, data, np.nan)
+
+    # when weights is not set, calculate the percentiles directly
     if weights is None:
-        return median(data)
+        return np.nanpercentile(good_values(data), np.array(percentile) * 100.)
+    else:
+        weights = weights.copy()
+
+    # when weights is set, calculate the weighted percentiles
     data, weights = np.array(data).flatten(), np.array(weights).flatten()
     assert np.shape(data) == np.shape(weights), \
         'The shape of data and weights does not match!'
 
     # remove nan
-    use_index = ~ (np.isnan(data) | np.isnan(weights))
+    # use_index = ~ (np.isnan(data) | np.isnan(weights))
+    use_index = select_good(data) & select_good(weights)
     data, weights = data[use_index], weights[use_index]
 
+    # when there is no available weights, return nan directly to save time.
     if not any(weights > 0):
-        return np.nan
+        if isinstance(percentile, (float, int)):
+            return np.nan
+        else:
+            return np.full(len(percentile), np.nan)
 
-    sorted_ind = data.argsort()
-    sorted_data = data[sorted_ind]
-    sorted_weights = weights[sorted_ind]
+    if data_is_none:
+        sorted_ind = weights.argsort()
+        sorted_weights = weights[sorted_ind]
+        returned_data = sorted_weights
+    else:
+        sorted_ind = data.argsort()
+        sorted_weights = weights[sorted_ind]
+        returned_data = data[sorted_ind]
+
     # Calculate the cumulative sum of the weights
     cum_weights = np.cumsum(sorted_weights)
-    # Find the median weight
-    midpoint = cum_weights[-1] / 2
+    normalize = cum_weights[-1]
+    cum_weights = cum_weights / normalize
 
-    exist_a_large_weight = any(weights > midpoint)
-    if exist_a_large_weight:
-        return (data[weights == np.max(weights)])[0]
+    # if calculating the median, find possible large weight to save time
+    if isinstance(percentile, float) and percentile == 0.5:
+        exist_a_large_weight = any(weights > 0.5 * normalize)
+        if exist_a_large_weight:
+            return (data[weights == np.max(weights)])[0]
 
-    median_ind = np.searchsorted(cum_weights, midpoint)
-    if np.abs(cum_weights[median_ind - 1] - midpoint) < sys.float_info.epsilon:
-        return np.mean(sorted_data[median_ind - 1:median_ind + 1])
-    return sorted_data[median_ind]
-
-    # manual alternative of np.searchsorted:
-    # for i in range(len(cum_weights)):
-    #     if cum_weights[i] >= midpoint:
-    #         return sorted_data[i]
+    indices = np.searchsorted(cum_weights, percentile)
+    if isinstance(percentile, float) and percentile == 0.5:
+        if np.abs(cum_weights[indices - 1] - 0.5) < sys.float_info.epsilon:
+            return np.mean(returned_data[indices - 1:indices + 1])
+    return returned_data[indices]
 
 
 # %% func: select percentile
 def select_percentile(x,
-                      array_of_percentiles=[25, 50, 75],
+                      percentile=[0.25, 0.50, 0.75],
+                      weights=None,
                       select=slice(None)):
-    # x = choose_value(dict(), None, x, 'data', None, x)
-    select = attr.combine_selections(select, reference=x)
-    x = np.where(select, x, np.nan)
-    cuts = np.nanpercentile(x, array_of_percentiles)
+    """percentile must be a list or array
+    """
+    percentile = np.array(percentile)
+    cuts = weighted_percentile(data=x, weights=weights,
+                               select=select,
+                               percentile=percentile)
     nbins = len(cuts) + 1
     select_percentile = np.ones((nbins, len(x)), dtype=bool)
     for i in range(nbins):
@@ -335,36 +312,171 @@ def select_percentile(x,
     return select_percentile
 
 
-# %% func: bin map
-def value_in_bin(index_in_bin, data=None, weights=None,
-                 at_least=1, func=mean, bar=None):
+# %% func: binning
+@attr.set_values(
+    set_default=True,
+    to_set=['x_left', 'x_right', 'x_step']
+)
+def binning(x, bins=50, x_step=None,
+            x_left=None, x_right=None,
+            select_index=True):
+    """
+    By default use bins=50, and set x_step using the range of x.
+    But as long as x_step is set, even within x.meta, bins will be overwritten.
+    x_left=min(x), x_right=max(x)
+
+    Returns
+    -------
+    bin_edges, select_index_in_bin
+    select_index_in_bin = None if select_index is False
+    """
+    if x_step is None:
+        # use bins
+        bin_edges = np.linspace(x_left, x_right, bins + 1)
+        # x_step = bin_edges[1] - bin_edges[0]
+    else:
+        bin_edges = np.arange(x_left, x_right + x_step, x_step)
+        bins = len(bin_edges) - 1
+
+    if not select_index:
+        return bin_edges, None
+
+    digitized_x = np.digitize(x, bin_edges)
+    select_index_in_bin = [(digitized_x == i) for i in range(1, bins + 1)]
+    # the following line should be a little faster using numpy matrix
+    # select_index_in_bin = np.eye(bins + 1)[digitized_x - 1].astype(bool)
+
+    return bin_edges, select_index_in_bin
+
+
+# %% func: value_in_bin
+def value_in_bin(index_in_bin=None, data=None, weights=None,
+                 at_least=1, func=mean, bar=None, bootstrap=0):
+    """bootstrap: 0: no bootstrap; 1: mean of the bootstrap;
+        2: std of the bootstrap; 3: confidence interval; 4: bootstrap distribution
+    """
+    if index_in_bin is None:
+        index_in_bin = slice(None)
     if data is None:
         data = np.ones_like(index_in_bin)
     data_in_bin = data[index_in_bin]  # usually used in calculating hist when only weights are given
-    if np.isfinite(data_in_bin).sum() < at_least:
-        value = np.nan
-        if bar is not None:
-            bar.update()
-        # bar()
-        # continue
-        return value
+
+    select = select_good(data_in_bin)
     if weights is not None:
         weights_in_bin = weights[index_in_bin]
-        value = func(data_in_bin, weights_in_bin)
+        select = select & select_good(weights_in_bin)
+        select = select & (weights_in_bin != 0.)
+    if select.sum() < at_least:
+        value = np.nan
+        if bar is not None:
+            bar()
+        return value
+
+    if not bootstrap:
+        if weights is None:
+            value = func(data_in_bin)
+        else:
+            value = func(data_in_bin, weights_in_bin)
     else:
-        value = func(data_in_bin)
+        if weights is None:
+            bootstrap_data = (data_in_bin,)
+        else:
+            bootstrap_data = (data_in_bin, weights_in_bin)
+
+        res = stats.bootstrap(bootstrap_data, func, n_resamples=100, vectorized=False, paired=True)
+
+        if bootstrap == 1:
+            value = np.nanmean(res.bootstrap_distribution)
+        elif bootstrap == 2:
+            value = res.standard_error
+        elif bootstrap == 3:
+            value = res.confidence_interval
+        elif bootstrap == 4:
+            value = res.bootstrap_distribution
+
     if bar is not None:
-        bar.update()
-    # bar()
+        bar()
     return value
 
 
-@attr.set_values(to_set=[
-    'x_left', 'x_right', 'x_step', 'x_window',
-    'y_left', 'y_right', 'y_step', 'y_window'
-])
+# %% func: bin_x
+@attr.set_values(
+    set_default=True,
+    to_set=['x_left', 'x_right', 'x_step']
+)
+def bin_x(x, y, weights=None,
+          mode='mean',
+          median_percentile=[0.841, 0.159],
+          func=None, errfunc=None,
+          bins=20, x_step=None,
+          x_left=None, x_right=None,
+          select=slice(None),
+          bootstrap=0,
+          **kwargs):
+    """
+    `mode` could be 'mean', 'median' or 'fraction'. Overwritten by `func` and `errfunc`.
+    When mode is 'median', median_percentile is used to calculate the errors.
+    `func` and `errfunc` should be functions that take 1-d array (may with a `weights` array) and return a number.
+    Returns
+    -------
+    ys, y_err, x_centers
+    """
+
+    select = attr.combine_selections(select, reference=x)
+    x = x[select]
+    y = y[select]
+    weights = weights[select] if weights is not None else None
+    # x_left = attr.choose_value(kwargs, 'x_left', x, 'left', calc.min, x)
+    # x_right = attr.choose_value(kwargs, 'x_right', x, 'right', calc.max, x)
+
+    x_edges, index_in_bin = binning(
+        x, x_left=x_left, x_right=x_right, bins=bins, x_step=x_step)
+
+    def _func_for_all_bins(func, y, weights, index_in_bin, bootstrap):
+        if weights is None:
+            return np.array([value_in_bin(ind, y, func=func, bootstrap=bootstrap) for ind in index_in_bin])
+        else:
+            return np.array([value_in_bin(ind, y, weights=weights, func=func, bootstrap=bootstrap)
+                            for ind in index_in_bin])
+
+    if func is None:
+        if mode == 'mean':
+            func = mean
+        elif mode == 'median':
+            func = median
+        elif mode == 'fraction':
+            func = fraction
+    if errfunc is None:
+        if mode == 'mean':
+            errfunc = std
+        elif mode == 'median':
+            from functools import partial
+            errfunc = partial(weighted_percentile, percentile=np.sort(median_percentile))
+        elif mode == 'fraction':
+            errfunc = fraction
+            bootstrap_err = 2
+
+        ys = _func_for_all_bins(func, y, weights, index_in_bin, bootstrap=bootstrap)
+        y_err = _func_for_all_bins(errfunc, y, weights, index_in_bin, bootstrap=bootstrap_err)
+        if mode == 'median':
+            y_err = np.array(y_err).T
+            y_err = np.abs(y_err - ys)
+
+    x_centers = (x_edges[:-1] + x_edges[1:]) / 2
+    return ys, y_err, x_centers
+
+
+# %% func: bin_map
+@attr.set_values(
+    set_default=True,
+    to_set=[
+        'x_left', 'x_right', 'x_step', 'x_window',
+        'y_left', 'y_right', 'y_step', 'y_window'
+    ]
+)
 def bin_map(x, y, z=None, weights=None, func=mean,
             at_least=1, select=slice(None),
+            step_follow_window=False,
             x_left=None, x_right=None,
             x_step=None, x_window=None,
             y_left=None, y_right=None,
@@ -379,25 +491,26 @@ def bin_map(x, y, z=None, weights=None, func=mean,
     ----------
     x, y, [z, weights]: columns, or simply 1-d array of data.
 
-    func: in each bin, the function used to calculate the value.
+    func: in each bin, the function used to calculate the value. Must satisfy func(data, weights) or func(data).
 
     select : select the data.
 
     at_least : at least how many selected samples in each window? The windows under this value is filled with np.nan.
 
-    other kwargs:
-        x_left=min(x), x_right=max(x),
-        y_left=min(y), y_right=max(y),
-        x_step=(x_right - x_left) / 20)
-        y_step=(y_right - y_left) / 20)
-        x_window=x_step, y_window=y_step,
+    step_follow_window : if True, the step will be overwritten by the window.
+
+    x_left=min(x), x_right=max(x),
+    y_left=min(y), y_right=max(y),
+    x_step=(x_right - x_left) / 40)
+    y_step=(y_right - y_left) / 40)
+    x_window=x_step, y_window=y_step,
 
     Returns
     -------
     binned_map: an np.array of the 2-d map,
                 left and right from the min and max of the map,
                 and other attributes inherited from z.
-    x_edges, y_edges: 1-d array with length = nbins+1. Similar with np.histogram2d
+    x_bin_edges, y_bin_edges: 1-d array with length = nbins+1. Similar with np.histogram2d
     """
 
     select = attr.combine_selections(select, reference=x)
@@ -407,27 +520,12 @@ def bin_map(x, y, z=None, weights=None, func=mean,
         z = z[select]
         assert (len(x) == len(z)), "The length of input array doesn't match!"
 
-    # weights_data = choose_value(kwargs, None, weights, 'data', None, weights)
-    # weights_data = None if weights is None
-    # if weights_data is not None:
     if weights is not None:
         weights = weights[select]
 
     assert (len(x) == len(y)), "The length of input array doesn't match!"
     data_length = len(x)
 
-    if x_left is None:
-        x_left = min(x)
-    if x_right is None:
-        x_right = max(x)
-    if y_left is None:
-        y_left = min(y)
-    if y_right is None:
-        y_right = max(y)
-    # x_left = attr.choose_value(kwargs, 'x_left', x, 'left', min, x)
-    # y_left = attr.choose_value(kwargs, 'y_left', y, 'left', min, y)
-    # x_right = attr.choose_value(kwargs, 'x_right', x, 'right', max, x)
-    # y_right = attr.choose_value(kwargs, 'y_right', y, 'right', max, y)
     default_step_num = 40
     if x_step is None:
         x_step = (x_right - x_left) / default_step_num
@@ -437,66 +535,42 @@ def bin_map(x, y, z=None, weights=None, func=mean,
         y_step = (y_right - y_left) / default_step_num
     if y_window is None:
         y_window = y_step
-    """
-    x_step = attr.choose_value(kwargs, 'x_step', x, 'step',
-                               (x_right - x_left) / default_step_num)
-    y_step = attr.choose_value(kwargs, 'y_step', y, 'step',
-                               (y_right - y_left) / default_step_num)
-    x_window = attr.choose_value(kwargs, 'x_window', x, 'window', x_step)
-    y_window = attr.choose_value(kwargs, 'y_window', y, 'window', y_step)
-    """
 
-    if z is not None:
-        x_edges = np.arange(x_left, x_right + x_step, x_step)
-        y_edges = np.arange(y_left, y_right + y_step, y_step)
-        xbins = len(x_edges) - 1
-        ybins = len(y_edges) - 1
+    if step_follow_window:
+        x_step = x_window
+        y_step = y_window
 
-        x_window_left = x_edges[:-1] + (x_step - x_window) / 2.
-        y_window_left = y_edges[:-1] + (y_step - y_window) / 2.
-        x_window_right = x_window_left + x_window
-        y_window_right = y_window_left + y_window
-    else:
+    x_bin_edges = np.arange(x_left, x_right + x_step, x_step)
+    y_bin_edges = np.arange(y_left, y_right + y_step, y_step)
+
+    if z is None and weights is None and step_follow_window:
+        # calculate the real, unweighted histogram here
+        binned_map, x_bin_edges, y_bin_edges = np.histogram2d(
+            x, y, bins=(x_bin_edges, y_bin_edges),
+            range=[[x_left, x_right], [y_left, y_right]]
+        )
+        binned_map = binned_map.T
+        return binned_map, x_bin_edges, y_bin_edges
+
+    if z is None:
         # calc hist
-        # hist need a larger binning, and window is often larger than step
         at_least = 0  # avoid nan in bin_map if calc hist
-        x_edges = np.arange(x_left, x_right + x_window, x_window)
-        y_edges = np.arange(y_left, y_right + y_window, y_window)
-        xbins = len(x_edges) - 1
-        ybins = len(y_edges) - 1
+        z = np.ones_like(x)
 
-        if weights is None:
-            binned_map, x_edges, y_edges = np.histogram2d(
-                x, y, bins=(x_edges, y_edges),
-                range=[[x_left, x_right], [y_left, y_right]]
-            )
-            binned_map = binned_map.T
-            return binned_map, x_edges, y_edges
-        else:
-            # normalize weights for calculating counts
-            # weights = weights / mean(weights)
-            x_window_left = x_edges[:-1]
-            y_window_left = y_edges[:-1]
-            x_window_right = x_edges[1:]
-            y_window_right = y_edges[1:]
-            z = np.ones_like(weights)
+        def func(d, w=None):
+            if w is None:
+                return np.nansum(d)
+            return np.nansum(d * w)
 
-            def func(d, w):
-                return np.nansum(d * w)
+    z = np.array(z)
 
-    """
-    index_in_bin = np.empty((xbins, ybins), dtype=object)
-    for i in np.ndindex(index_in_bin.shape):
-        index_in_bin[i] = []
-    x_bin_n = (x - x_left)/x_step
-    x_bin_n = np.trunc(x_bin_n).astype(int)
-    x_bin_n -= (x_bin_n == xbins).astype(int)
-    y_bin_n = (y - y_left)/y_step
-    y_bin_n = np.trunc(y_bin_n).astype(int)
-    y_bin_n -= (y_bin_n == ybins).astype(int)
-    for i in range(length):
-        index_in_bin[x_bin_n[i]][y_bin_n[i]].append(i)
-    """
+    xbins = len(x_bin_edges) - 1
+    ybins = len(y_bin_edges) - 1
+    x_window_left = x_bin_edges[:-1] + (x_step - x_window) / 2.
+    y_window_left = y_bin_edges[:-1] + (y_step - y_window) / 2.
+    x_window_right = x_window_left + x_window
+    y_window_right = y_window_left + y_window
+
     index_in_x_bin = np.zeros([xbins, data_length], dtype=bool)
     index_in_y_bin = np.zeros([ybins, data_length], dtype=bool)
     for i in range(xbins):
@@ -507,48 +581,60 @@ def bin_map(x, y, z=None, weights=None, func=mean,
         index_in_y_bin[j] &= y <= y_window_right[j]
 
     binned_map = np.zeros([xbins, ybins])
-    # with alive_bar(xbins * ybins) as bar:
-    with ProgressBar(xbins * ybins) as bar:
+
+    """
+    Using multiprocessing here will cause bugs like `TypeError: cannot pickle '_io.TextIOWrapper' object`.
+    Using other multi-processing tools may help, but I haven't tried much of them.
+    `multiprocess` works but is not really faster. I have no idea why.
+
+    Using numpy matrix here is possible, but need the broadcasting of z and
+    weights to 3d arrays of shape (len(z), xbins, ybins), which is not really
+    faster, uses more memory, and does not support more complicated functions.
+    """
+    with misc.Bar(xbins * ybins) as bar:
         for i in range(xbins):
             for j in range(ybins):
                 index_in_xy_bin = index_in_x_bin[i] & index_in_y_bin[j]
+                index_in_xy_bin = np.where(index_in_xy_bin)[0]
+                """
+                The above line takes some time, but eliminates the calculation of
+                z[index_in_xy_bin] and weights[index_in_xy_bin] in `value_in_bin`,
+                which are even slower when the selection is sparse.
+                """
                 binned_map[i][j] = value_in_bin(index_in_xy_bin, data=z,
                                                 weights=weights, at_least=at_least, func=func, bar=bar)
 
     # transpose the matric to follow a Cartesian convention. The same operation is NOT done in, e.g., np.histogram2d.
     binned_map = binned_map.T
-    return binned_map, x_edges, y_edges
+    return binned_map, x_bin_edges, y_bin_edges
 
 
 # %% func: hist
-def hist(x, density=False, norm=False, select=slice(None), **kwargs):
+@attr.set_values(
+    set_default=True,
+    to_set=['x_left', 'x_right', 'x_step']
+)
+def hist(x, weights=None,
+         bins=100, x_step=None,
+         x_left=None, x_right=None,
+         density=False, norm=False, select=slice(None), **kwargs):
     """
     density: scaled by the step length
     norm: further scaling to make integrated area = 1
-
-    kwargs:
-        bins=100,
-        x_left=min(x),
-        x_right=max(x),
-        x_step
+    bins=100
+    x_step=None, overwrite bins when set
+    x_left=min(x), x_right=max(x)
 
     Returns
     -------
     hist, hist_err, bin_center, kwargs
     """
-    x_left = attr.choose_value(kwargs, 'x_left', x, 'left', min, x)
-    x_right = attr.choose_value(kwargs, 'x_right', x, 'right', max, x)
     select = attr.combine_selections(select, reference=x)
     x = x[select]
-    weights = kwargs.get('weights')
-    if kwargs.get('x_step', None) is None:
-        bins = kwargs.get('bins', 100)
-        bin_edges = np.linspace(x_left, x_right, bins + 1)
-        x_step = bin_edges[1] - bin_edges[0]
-    else:
-        x_step = kwargs.get('x_step')
-        bin_edges = np.arange(x_left, x_right + x_step, x_step)
-        bins = len(bin_edges) - 1
+
+    bin_edges, index_in_bin = binning(
+        x, bins=bins, x_step=x_step, x_left=x_left, x_right=x_right, select_index=True)
+
     if weights is None:
         hist, bin_edges = np.histogram(
             x, bins=bin_edges,
@@ -560,8 +646,6 @@ def hist(x, density=False, norm=False, select=slice(None), **kwargs):
     else:
         weights = weights[select]
 
-        digitized_x = np.digitize(x, bin_edges)
-        index_in_bin = [(digitized_x == i) for i in range(1, bins + 1)]
         hist = [value_in_bin(index_in_bin_i, weights=weights,
                              func=lambda d, w: np.nansum(d * w))
                 for index_in_bin_i in index_in_bin]
@@ -582,17 +666,28 @@ def hist(x, density=False, norm=False, select=slice(None), **kwargs):
 
     bin_center = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-    return bin_center, hist, hist_err, kwargs
+    return hist, hist_err, bin_center, kwargs
 
 
 # %% func: fraction
-def fraction(select, within=slice(None), weights=None):
+def fraction(select, within=slice(None), weights=None, print_info=False):
     # combine `within` when it is a list, and save `within` from slice(None)
     within = attr.combine_selections(within, reference=select)
+    within = np.array(within, dtype=bool)
+    select = np.array(select, dtype=bool)
+    within = within & select_good(select)
     if weights is None:
-        return np.nansum(select & within) / np.nansum(within)
+        denominator = np.nansum(within)
+        numerator = np.nansum(select & within)
+        if print_info:
+            print(f'{numerator} / {denominator}')
+        return numerator / denominator
     else:
-        return np.nansum(weights[select & within]) / np.nansum(weights[within])
+        denominator = np.nansum(weights[within])
+        numerator = np.nansum(weights[select & within])
+        if print_info:
+            print(f'{numerator} / {denominator}')
+        return numerator / denominator
 
 
 # %% loess2d from Kai

@@ -11,3 +11,9 @@ Reload of the class DataSeries will disrupt the type check already loaded.
 
 ## plot
 Using too much `kwargs` will make the program less readable.
+
+For functions of "outer" level which has @set_plot decorated function inside:
+    - `select` should not be set at the beginning of the function, but should be set in the inner function,
+       for `x = x[select]` will destroy the dimension of `x` fed into the inner ones.
+    - Sometimes the filename should be set manually, except when the name from the inner function is good enough.
+

@@ -7,7 +7,19 @@ import sys
 import numpy as np
 
 
-# %% func: progress_bar
+# %% progress bar
+try:
+    from alive_progress import alive_bar as Bar  # func
+except ImportError:
+    from astropy.utils.console import ProgressBar as Bar_  # class
+
+    class Bar(Bar_):
+        # def __init__(self, *args, **kwargs):
+        # self.bar = Bar_(*args, **kwargs)
+        def __call__(self):
+            return self.update()
+
+
 # def progress_bar(prog, scale, start_time):
 def progress_bar(prog, scale):
     # 做一个手动的进度条，用于循环。

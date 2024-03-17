@@ -82,8 +82,7 @@ def combine_selections(list_of_selects, reference=None):
 
     Returns
     -------
-    select_result : an bool array
-    name_list : a list of names
+    select_result : an bool array with the combined name in attr
     """
 
     # the comparison between Column and slice(None) is an array of bool
@@ -384,7 +383,11 @@ def get_default(xyz, xyz_str, attr_str, kwargs, set_default):
 def set_values(to_set=[], set_default=False):
     """
     to_set is like ['x_step', 'y_label']
-    if y or z is None, the calculation is automatically skipped through the choose_value function.
+    Update the kwargs with the value selected between kwargs['x_step'], x.meta['step'],
+    or the default value if `set_default` is True.
+    When using the decorator, the function may have args like `x_left=None` explicitly set, or hidden in **kwargs.
+    If y or z is None, the calculation is automatically skipped through the choose_value function.
+    Only left, right and label are supported to set default values.
     """
     def decorate(called_func):
         @wraps(called_func)
@@ -402,8 +405,12 @@ def set_values(to_set=[], set_default=False):
                 # refresh kwargs
                 get_default(xyz, xyz_str, attr_str, kwargs, set_default)
             # now that all the kwargs are refreshed, call the function
-            func_return = called_func(x, y=y, z=z, *args, **kwargs)
-            return func_return
+            if y is None:
+                return called_func(x, *args, **kwargs)
+            elif z is None:
+                return called_func(x, y=y, *args, **kwargs)
+            else:
+                return called_func(x, y=y, z=z, *args, **kwargs)
         return set_values_core
     return decorate
 
