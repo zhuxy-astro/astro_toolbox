@@ -4,7 +4,7 @@
 # %% import
 import sys
 import numpy as np
-from astropy.cosmology import Planck18, FlatLambdaCDM
+from astropy.cosmology import Planck15, FlatLambdaCDM
 from scipy.interpolate import interp1d
 from . import attr, misc
 from scipy.spatial import KDTree
@@ -75,8 +75,8 @@ def std(array, weights=None):
 
 
 # %% func: vmax_inv
-Planck_H0 = Planck18.H0
-Planck_Om0 = Planck18.Om0
+Planck_H0 = Planck15.H0
+Planck_Om0 = Planck15.Om0
 
 
 def vmax_inv(z_left, z_right, z_min, z_max,
@@ -324,6 +324,7 @@ def binning(x, bins=50, x_step=None,
     By default use bins=50, and set x_step using the range of x.
     But as long as x_step is set, even within x.meta, bins will be overwritten.
     x_left=min(x), x_right=max(x)
+    select_index: whether to return the index in each bin, used in functions only.
 
     Returns
     -------
@@ -353,7 +354,7 @@ def binning(x, bins=50, x_step=None,
 def value_in_bin(index_in_bin=None, data=None, weights=None,
                  at_least=1, func=mean, bar=None, bootstrap=0):
     """bootstrap: 0: no bootstrap; 1: mean of the bootstrap;
-        2: std of the bootstrap; 3: confidence interval; 4: bootstrap distribution
+        2: std of the bootstrap; 3: confidence interval; 4: return the res object.
     """
     if index_in_bin is None:
         index_in_bin = slice(None)
@@ -366,37 +367,62 @@ def value_in_bin(index_in_bin=None, data=None, weights=None,
         weights_in_bin = weights[index_in_bin]
         select = select & select_good(weights_in_bin)
         select = select & (weights_in_bin != 0.)
-    if select.sum() < at_least:
-        value = np.nan
-        if bar is not None:
-            bar()
-        return value
 
-    if not bootstrap:
-        if weights is None:
-            value = func(data_in_bin)
-        else:
-            value = func(data_in_bin, weights_in_bin)
-    else:
-        if weights is None:
-            bootstrap_data = (data_in_bin,)
-        else:
-            bootstrap_data = (data_in_bin, weights_in_bin)
-
-        res = stats.bootstrap(bootstrap_data, func, n_resamples=100, vectorized=False, paired=True)
-
-        if bootstrap == 1:
-            value = np.nanmean(res.bootstrap_distribution)
-        elif bootstrap == 2:
-            value = res.standard_error
-        elif bootstrap == 3:
-            value = res.confidence_interval
-        elif bootstrap == 4:
-            value = res.bootstrap_distribution
+    bootstrap_args = dict(
+        n_resamples=100,
+        vectorized=False, paired=True,
+        confidence_level=0.68,
+        random_state=42
+    )
 
     if bar is not None:
         bar()
-    return value
+
+    if bootstrap and (at_least <= 1):
+        at_least = 2
+    if select.sum() < at_least:
+        if bootstrap == 1:
+            return np.nan
+        elif bootstrap == 2:
+            return np.nan
+        elif bootstrap == 3:
+            return np.array([np.nan, np.nan])
+        elif bootstrap == 4:
+            return stats.bootstrap(([np.nan, np.nan],), func, **bootstrap_args)
+
+        # no bootstrap
+        if weights is None:
+            func_return_test = func(np.array([1., 1.]))
+        else:
+            func_return_test = func(np.array([1., 1.]), weights=np.array([1., 1.]))
+        return_is_single = not hasattr(func_return_test, '__len__')
+        if return_is_single:
+            return np.nan
+        else:
+            return np.full(len(func_return_test), np.nan)
+
+    if not bootstrap:
+        if weights is None:
+            return func(data_in_bin)
+        else:
+            return func(data_in_bin, weights=weights_in_bin)
+
+    # bootstrap
+    if weights is None:
+        bootstrap_data = (data_in_bin,)
+    else:
+        bootstrap_data = (data_in_bin, weights_in_bin)
+
+    res = stats.bootstrap(bootstrap_data, func, **bootstrap_args)
+
+    if bootstrap == 1:
+        return np.nanmean(res.bootstrap_distribution)
+    elif bootstrap == 2:
+        return res.standard_error
+    elif bootstrap == 3:
+        return res.confidence_interval
+    elif bootstrap == 4:
+        return res
 
 
 # %% func: bin_x
@@ -411,10 +437,10 @@ def bin_x(x, y, weights=None,
           bins=20, x_step=None,
           x_left=None, x_right=None,
           select=slice(None),
-          bootstrap=0,
+          bootstrap=False,
           **kwargs):
     """
-    `mode` could be 'mean', 'median' or 'fraction'. Overwritten by `func` and `errfunc`.
+    `mode` could be 'mean' or 'median'. Overwritten by `func` and `errfunc`.
     When mode is 'median', median_percentile is used to calculate the errors.
     `func` and `errfunc` should be functions that take 1-d array (may with a `weights` array) and return a number.
     Returns
@@ -426,8 +452,6 @@ def bin_x(x, y, weights=None,
     x = x[select]
     y = y[select]
     weights = weights[select] if weights is not None else None
-    # x_left = attr.choose_value(kwargs, 'x_left', x, 'left', calc.min, x)
-    # x_right = attr.choose_value(kwargs, 'x_right', x, 'right', calc.max, x)
 
     x_edges, index_in_bin = binning(
         x, x_left=x_left, x_right=x_right, bins=bins, x_step=x_step)
@@ -444,23 +468,24 @@ def bin_x(x, y, weights=None,
             func = mean
         elif mode == 'median':
             func = median
-        elif mode == 'fraction':
-            func = fraction
     if errfunc is None:
         if mode == 'mean':
             errfunc = std
         elif mode == 'median':
             from functools import partial
             errfunc = partial(weighted_percentile, percentile=np.sort(median_percentile))
-        elif mode == 'fraction':
-            errfunc = fraction
-            bootstrap_err = 2
 
-        ys = _func_for_all_bins(func, y, weights, index_in_bin, bootstrap=bootstrap)
-        y_err = _func_for_all_bins(errfunc, y, weights, index_in_bin, bootstrap=bootstrap_err)
-        if mode == 'median':
-            y_err = np.array(y_err).T
-            y_err = np.abs(y_err - ys)
+    if bootstrap:
+        ress = _func_for_all_bins(func, y, weights, index_in_bin, bootstrap=4)
+        ys = [np.nanmean(res.bootstrap_distribution) for res in ress]
+        y_err = [res.confidence_interval for res in ress]
+    else:
+        ys = _func_for_all_bins(func, y, weights, index_in_bin, bootstrap=0)
+        y_err = _func_for_all_bins(errfunc, y, weights, index_in_bin, bootstrap=0)
+
+    if mode == 'median' or bootstrap:
+        y_err = np.array(y_err).T
+        y_err = np.abs(y_err - ys)
 
     x_centers = (x_edges[:-1] + x_edges[1:]) / 2
     return ys, y_err, x_centers
@@ -557,10 +582,10 @@ def bin_map(x, y, z=None, weights=None, func=mean,
         at_least = 0  # avoid nan in bin_map if calc hist
         z = np.ones_like(x)
 
-        def func(d, w=None):
-            if w is None:
+        def func(d, weights=None):
+            if weights is None:
                 return np.nansum(d)
-            return np.nansum(d * w)
+            return np.nansum(d * weights)
 
     z = np.array(z)
 
@@ -627,7 +652,7 @@ def hist(x, weights=None,
 
     Returns
     -------
-    hist, hist_err, bin_center, kwargs
+    hist, hist_err, bin_center
     """
     select = attr.combine_selections(select, reference=x)
     x = x[select]
@@ -647,11 +672,11 @@ def hist(x, weights=None,
         weights = weights[select]
 
         hist = [value_in_bin(index_in_bin_i, weights=weights,
-                             func=lambda d, w: np.nansum(d * w))
+                             func=lambda d, weights: np.nansum(d * weights))
                 for index_in_bin_i in index_in_bin]
         hist_err = [value_in_bin(index_in_bin_i, weights=weights,
-                                 func=lambda d, w:
-                                     np.sqrt(np.nansum(w ** 2)))
+                                 func=lambda d, weights:
+                                     np.sqrt(np.nansum(weights ** 2)))
                     for index_in_bin_i in index_in_bin]
 
     hist = np.array(hist)
@@ -666,28 +691,29 @@ def hist(x, weights=None,
 
     bin_center = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-    return hist, hist_err, bin_center, kwargs
+    return hist, hist_err, bin_center
 
 
 # %% func: fraction
 def fraction(select, within=slice(None), weights=None, print_info=False):
+    """In simple calculating the fraction without `within` and just `weights`, the function is equivalent to `mean`.
+    """
     # combine `within` when it is a list, and save `within` from slice(None)
     within = attr.combine_selections(within, reference=select)
     within = np.array(within, dtype=bool)
     select = np.array(select, dtype=bool)
     within = within & select_good(select)
+
     if weights is None:
         denominator = np.nansum(within)
         numerator = np.nansum(select & within)
-        if print_info:
-            print(f'{numerator} / {denominator}')
-        return numerator / denominator
     else:
         denominator = np.nansum(weights[within])
         numerator = np.nansum(weights[select & within])
-        if print_info:
-            print(f'{numerator} / {denominator}')
-        return numerator / denominator
+
+    if print_info:
+        print(f'{numerator} / {denominator}')
+    return numerator / denominator
 
 
 # %% loess2d from Kai

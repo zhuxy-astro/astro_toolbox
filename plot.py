@@ -295,6 +295,52 @@ def scatter(fig, ax,
     return img
 
 
+# %% func: hexbin
+@set_plot(special_suffix='hexbin')
+def hexbin(fig, ax, x, y, z=None, select=slice(None),
+           weights=None, func=calc.mean,
+           bins=100,
+           at_least=1, z_log=False,
+           plt_args=dict(), **kwargs):
+    """bins could be a number or a list of two numbers.
+    """
+
+    select = attr.combine_selections(select, reference=x)
+    x = x[select]
+    y = y[select]
+    if z is not None:
+        z = z[select]
+    if weights is not None:
+        weights = weights[select]
+        if z is None:
+            z = weights
+            if func is calc.mean:
+                func = np.nansum
+        else:
+            raise ValueError('weights is not allowed when z is set.')
+        # TODO: simple partial func will not work because the len don't match.
+            """
+            # from functools import partial
+            z_array = np.array(z)
+            weights_array = np.array(weights)
+            z_weights = np.array([z_array, weights_array]).T
+
+            def used_func(z_w):
+                return func(np.transpose(z_w)[0], weights=np.transpose(z_w)[1])
+            """
+    # TODO: Why is it remembered???
+    print(plt_args)
+    plt_args.setdefault('extent',
+                        (kwargs.get('x_left'), kwargs.get('x_right'), kwargs.get('y_left'), kwargs.get('y_right')))
+    if z_log:
+        plt_args.setdefault('bins', 'log')
+    img = ax.hexbin(x, y, C=z,
+                    reduce_C_function=func,
+                    gridsize=bins, mincnt=at_least,
+                    **plt_args)
+    return img
+
+
 # %% func: bin_map
 def bin_map(x, y, z=None,
             select=slice(None),
@@ -334,10 +380,10 @@ def bin_map(x, y, z=None,
                                            step_follow_window=step_follow_window, **kwargs)
     if z_log:
         z_map = np.log10(z_map)
-        kwargs['cbar'] = False
+        kwargs.setdefault('cbar', False)
     if z is None and not step_follow_window:
         # calc histogram, but not the real number in each window
-        kwargs['cbar'] = False
+        kwargs.setdefault('cbar', False)
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
     # edges is left here not converted into centers because this is done in scatter and img.
@@ -459,8 +505,7 @@ def hist(x,
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in hist. Use errorbar_args and bar_args instead.')
 
-    h, h_err, x_center, kw = calc.hist(x, **kwargs)
-    kwargs.update(kw)
+    h, h_err, x_center = calc.hist(x, **kwargs)
 
     if y_log:
         kwargs['y_left'] = kwargs.get('y_left', 10.)
@@ -480,8 +525,9 @@ def hist(x,
     h = attr.array2column(h, name='hist')
 
     fig, ax = _bar(x_center, h,
-                   plt_args=bar_args,
+                   plt_args=bar_args, y_log=y_log,
                    **kwargs)
+
     if plot_errorbar:
         default_errorbar_args = dict(
             elinewidth=1.5,
@@ -530,7 +576,7 @@ def bin_x(x, y=None, y_log=False, mode='mean',
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in bin_x. Use errorbar_args and scatter_args instead.')
 
-    ys, y_err, x_centers = calc.bin_x(x, y, **kwargs)
+    ys, y_err, x_centers = calc.bin_x(x, y, mode=mode, **kwargs)
     ys = attr.array2column(ys, meta_from=y)
 
     x_centers = attr.array2column(x_centers, meta_from=x)
@@ -544,7 +590,7 @@ def bin_x(x, y=None, y_log=False, mode='mean',
 
     if not plot_errorbar and plot_fill:
         fill_args.setdefault('alpha', 0.2)
-        if mode == 'median':
+        if mode == 'median' or kwargs.get('bootstrap', False):
             ax.fill_between(x_centers, ys - y_err[0], ys + y_err[1], **fill_args)
         else:
             ax.fill_between(x_centers, ys - y_err, ys + y_err, **fill_args)
