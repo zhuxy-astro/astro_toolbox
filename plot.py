@@ -59,7 +59,7 @@ def set_plot(special_suffix=''):
                     'z_label', 'z_left', 'z_right', 'z_line'])
         def set_plot_core(x, y=None, z=None,
                           select=slice(None),
-                          plt_args=dict(),
+                          plt_args=None,
                           title='',
                           filename=None, savedir='figures',
                           fig_ax=None,
@@ -74,7 +74,7 @@ def set_plot(special_suffix=''):
             ----------
             x, y=None, z=None: Columns or arrays.
             select=slice(None),
-            plt_args=dict(),
+            plt_args=None,  # automatically set to dict(). No need to set manually in the wrapped function.
             title='',  # title of the plot, the name of the selections by default.
             filename=None,  # 'X-Y-Z-{special_suffix}, {title}.pdf' by default. If set to '', no file will be saved.
             savedir='figures',
@@ -104,6 +104,9 @@ def set_plot(special_suffix=''):
                 name_list.append(attr.get_name(y, 'Y'))
             if have_z:
                 name_list.append(attr.get_name(z, 'Z'))
+
+            if plt_args is None:
+                plt_args = dict()
 
             if fig_ax is None:
                 fig, ax = plt.subplots(subplot_kw={'projection': proj})
@@ -229,8 +232,9 @@ def contour(fig, ax, x_edges, y_edges, z, plt_args,
     if plt_args.get('cmap') is None:
         plt_args.setdefault('colors', default_plt_args.pop('colors'))
     # else plt_args has cmap
-    for k, v in default_plt_args.items():
-        plt_args.setdefault(k, v)
+    if plt_args is not None:
+        default_plt_args.update(plt_args)
+    plt_args = default_plt_args
 
     x_centers = (x_edges[1:] + x_edges[:-1]) / 2
     y_centers = (y_edges[1:] + y_edges[:-1]) / 2
@@ -247,7 +251,7 @@ def contour(fig, ax, x_edges, y_edges, z, plt_args,
 def scatter(fig, ax,
             x, y, z=None, select=slice(None),
             plot_border=False,
-            plt_args=dict(),
+            plt_args=None,
             **kwargs):
     """
     Parameters
@@ -260,8 +264,9 @@ def scatter(fig, ax,
         rasterized=True,
         cmap='RdBu'
     )
-    for k, v in default_plt_args.items():
-        plt_args.setdefault(k, v)
+    if plt_args is not None:
+        default_plt_args.update(plt_args)
+    plt_args = default_plt_args
 
     # plot the bg shadow first, then plot the colors
     if plot_border:
@@ -301,7 +306,7 @@ def hexbin(fig, ax, x, y, z=None, select=slice(None),
            weights=None, func=calc.mean,
            bins=100,
            at_least=1, z_log=False,
-           plt_args=dict(), **kwargs):
+           plt_args=None, **kwargs):
     """bins could be a number or a list of two numbers.
     """
 
@@ -317,23 +322,16 @@ def hexbin(fig, ax, x, y, z=None, select=slice(None),
             if func is calc.mean:
                 func = np.nansum
         else:
-            raise ValueError('weights is not allowed when z is set.')
-        # TODO: simple partial func will not work because the len don't match.
-            """
-            # from functools import partial
-            z_array = np.array(z)
-            weights_array = np.array(weights)
-            z_weights = np.array([z_array, weights_array]).T
+            # use index as fake z and get the real z in the function, along with weights
+            from functools import partial
+            func = partial(calc.value_in_bin, func=func, data=z, weights=weights)
+            z = np.arange(len(z))
 
-            def used_func(z_w):
-                return func(np.transpose(z_w)[0], weights=np.transpose(z_w)[1])
-            """
-    # TODO: Why is it remembered???
-    print(plt_args)
     plt_args.setdefault('extent',
                         (kwargs.get('x_left'), kwargs.get('x_right'), kwargs.get('y_left'), kwargs.get('y_right')))
     if z_log:
         plt_args.setdefault('bins', 'log')
+
     img = ax.hexbin(x, y, C=z,
                     reduce_C_function=func,
                     gridsize=bins, mincnt=at_least,
@@ -347,7 +345,7 @@ def bin_map(x, y, z=None,
             plot_contour=1, plot_img=1,
             z_log=False,
             step_follow_window=False,
-            contour_args=dict(), img_args=dict(),
+            contour_args=None, img_args=None,
             **kwargs):
     """
     Binning x and y to calculate some function of z.
@@ -428,7 +426,7 @@ def bin_map(x, y, z=None,
 # %% func: contour_scatter
 def contour_scatter(x, y,
                     select=slice(None),
-                    contour_args=dict(), scatter_args=dict(),
+                    contour_args=None, scatter_args=None,
                     percentile=0.99,
                     **kwargs):
     """
@@ -447,8 +445,10 @@ def contour_scatter(x, y,
         c='cornflowerblue',
         alpha=0.5,
         lw=0)
-    for k, v in default_scatter_args.items():
-        scatter_args.setdefault(k, v)
+    if scatter_args is not None:
+        default_scatter_args.update(scatter_args)
+    scatter_args = default_scatter_args
+
     fig, ax = scatter(x, y,
                       plt_args=scatter_args, select=select,
                       filename='',
@@ -476,6 +476,8 @@ def contour_scatter(x, y,
 
     x_centers = (x_edges[1:] + x_edges[:-1]) / 2
     y_centers = (y_edges[1:] + y_edges[:-1]) / 2
+    if contour_args is None:
+        contour_args = dict()
     contour_args.setdefault('cmap', 'coolwarm')
     ax.contourf(x_centers, y_centers, z_map,
                 levels=hist_threshold,
@@ -495,8 +497,8 @@ def _bar(fig, ax, x, y, plt_args, y_log=False, **kwargs):
 def hist(x,
          y_log=False,
          plot_errorbar=True,
-         bar_args=dict(),
-         errorbar_args=dict(),
+         bar_args=None,
+         errorbar_args=None,
          **kwargs):
     """
     kwargs: everything in calc.hist
@@ -535,8 +537,9 @@ def hist(x,
             markersize=0,
             ls='',
         )
-        for k, v in default_errorbar_args.items():
-            errorbar_args.setdefault(k, v)
+        if errorbar_args is not None:
+            default_errorbar_args.update(errorbar_args)
+        errorbar_args = default_errorbar_args
         kwargs.pop('fig_ax', None)
         fig, ax = errorbar(x_center, h, y_err=h_err, fig_ax=(fig, ax),
                            plt_args=errorbar_args,
@@ -548,7 +551,7 @@ def hist(x,
 # %% func: plot mean with std
 @set_plot()
 def errorbar(fig, ax, x_centers, y_means, y_err=None,
-             plt_args=dict(), **kwargs):
+             plt_args=None, **kwargs):
     """
     This is to plot mean with std, not for individual points.
     """
@@ -557,8 +560,9 @@ def errorbar(fig, ax, x_centers, y_means, y_err=None,
         marker='o', markersize=7,
         c='tab:blue',
     )
-    for k, v in default_plt_args.items():
-        plt_args.setdefault(k, v)
+    if plt_args is not None:
+        default_plt_args.update(plt_args)
+    plt_args = default_plt_args
 
     img = ax.errorbar(x_centers, y_means, yerr=y_err, **plt_args)
     return img
@@ -566,7 +570,7 @@ def errorbar(fig, ax, x_centers, y_means, y_err=None,
 
 def bin_x(x, y=None, y_log=False, mode='mean',
           plot_scatter=False, plot_errorbar=True, plot_fill=True,
-          errorbar_args=dict(), scatter_args=dict(), fill_args=dict(), bar_args=dict(),
+          errorbar_args=None, scatter_args=None, fill_args=None,
           **kwargs):
     """
     If errorbar is not set, plot the filled area.
@@ -574,13 +578,16 @@ def bin_x(x, y=None, y_log=False, mode='mean',
     """
 
     if kwargs.get('plt_args') is not None:
-        raise ValueError('plt_args is not allowed in bin_x. Use errorbar_args and scatter_args instead.')
+        raise ValueError('plt_args is not allowed in bin_x. '
+                         'Use errorbar_args,fill_args and scatter_args instead.')
 
     ys, y_err, x_centers = calc.bin_x(x, y, mode=mode, **kwargs)
     ys = attr.array2column(ys, meta_from=y)
 
     x_centers = attr.array2column(x_centers, meta_from=x)
 
+    if errorbar_args is None:
+        errorbar_args = dict()
     if plot_errorbar:
         y_err_used = y_err
     else:
@@ -589,6 +596,8 @@ def bin_x(x, y=None, y_log=False, mode='mean',
     fig, ax = errorbar(x_centers, ys, y_err=y_err_used, plt_args=errorbar_args, **kwargs)
 
     if not plot_errorbar and plot_fill:
+        if fill_args is None:
+            fill_args = dict()
         fill_args.setdefault('alpha', 0.2)
         if mode == 'median' or kwargs.get('bootstrap', False):
             ax.fill_between(x_centers, ys - y_err[0], ys + y_err[1], **fill_args)
@@ -597,6 +606,8 @@ def bin_x(x, y=None, y_log=False, mode='mean',
     kwargs.pop('fig_ax', None)
 
     if y is not None and plot_scatter:
+        if scatter_args is None:
+            scatter_args = dict()
         scatter_args['c'] = 'silver'  # silver scatter in the background
         fig, ax = scatter(x, y, z=None, fig_ax=(fig, ax),
                           plt_args=scatter_args,
@@ -607,7 +618,7 @@ def bin_x(x, y=None, y_log=False, mode='mean',
 
 # %% func: loess2d
 @set_plot(special_suffix='loess')
-def loess(fig, ax, x, y, z, plt_args, plot_border=True,
+def loess(fig, ax, x, y, z, plt_args=None, plot_border=True,
           select=slice(None),
           **kwargs):
     select = attr.combine_selections(select, reference=x)
@@ -631,16 +642,21 @@ def loess(fig, ax, x, y, z, plt_args, plot_border=True,
         rasterized=True,
         cmap='RdBu',
     )
-    for k, v in default_plt_args.items():
-        plt_args.setdefault(k, v)
+    if plt_args is not None:
+        default_plt_args.update(plt_args)
+    plt_args = default_plt_args
 
     # plot the bg shadow first, then plot the colors
+    default_border_args = dict(
+        edgecolors='k',
+        lw=4.5,
+    )
     if plot_border:
         border_args = plt_args.copy()
         border_args.pop('cmap', None)
-        border_args.setdefault('edgecolors', 'k')
+        default_border_args.update(border_args)
+        border_args = default_border_args
         # border_args.setdefault('lw', border_args['s'] / 20)
-        border_args.setdefault('lw', 4.5)
         ax.scatter(x_use, y_use, **border_args)
 
     img = ax.scatter(x_use, y_use, c=zout, lw=0, **plt_args)

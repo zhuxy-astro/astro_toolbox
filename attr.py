@@ -72,6 +72,16 @@ def array2column(array: np.ndarray | Table,
     """
 
 
+# %% table cleaning
+def clean_table(t: Table):
+    for name in t.colnames:
+        col_is_float = np.issubdtype(t.dtype[name], np.floating)
+        col_is_masked = isinstance(t[name], MaskedColumn)
+        if (col_is_float and col_is_masked):
+            t[name] = t[name].filled(np.nan)
+    return t
+
+
 # %% combine selections
 def combine_selections(list_of_selects, reference=None):
     """
@@ -380,7 +390,7 @@ def get_default(xyz, xyz_str, attr_str, kwargs, set_default):
     return kwargs
 
 
-def set_values(to_set=[], set_default=False):
+def set_values(to_set=None, set_default=False):
     """
     to_set is like ['x_step', 'y_label']
     Update the kwargs with the value selected between kwargs['x_step'], x.meta['step'],
@@ -392,18 +402,19 @@ def set_values(to_set=[], set_default=False):
     def decorate(called_func):
         @wraps(called_func)
         def set_values_core(x, y=None, z=None, *args, **kwargs):
-            # to_set_split is like [['x', 'step'], ['y', 'label']]
-            to_set_split = [i.split('_') for i in to_set]
-            # clean up to_set_split, remove the ones with wrong length and leave the ones like ['x', 'step']
-            to_set_like_xyz_attr = [i for i in to_set_split if len(i) == 2]
-            # for each of them, refresh the kwargs
-            for xyz_attr_list in to_set_like_xyz_attr:
-                # xyz_attr_list is like ['x', 'step']
-                xyz_str = xyz_attr_list[0]  # like 'x'
-                xyz = eval(xyz_str)  # like x
-                attr_str = xyz_attr_list[1]  # like 'step'
-                # refresh kwargs
-                get_default(xyz, xyz_str, attr_str, kwargs, set_default)
+            if to_set is not None:
+                # to_set_split is like [['x', 'step'], ['y', 'label']]
+                to_set_split = [i.split('_') for i in to_set]
+                # clean up to_set_split, remove the ones with wrong length and leave the ones like ['x', 'step']
+                to_set_like_xyz_attr = [i for i in to_set_split if len(i) == 2]
+                # for each of them, refresh the kwargs
+                for xyz_attr_list in to_set_like_xyz_attr:
+                    # xyz_attr_list is like ['x', 'step']
+                    xyz_str = xyz_attr_list[0]  # like 'x'
+                    xyz = eval(xyz_str)  # like x
+                    attr_str = xyz_attr_list[1]  # like 'step'
+                    # refresh kwargs
+                    get_default(xyz, xyz_str, attr_str, kwargs, set_default)
             # now that all the kwargs are refreshed, call the function
             if y is None:
                 return called_func(x, *args, **kwargs)

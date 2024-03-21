@@ -121,12 +121,14 @@ class _SurveyBase:
     _threads = 50  # number of threads for downloading images
     _extension = '.jpg'
 
-    def __init__(self, table=None, rename_dict={}):
+    def __init__(self, table=None, rename_dict=None):
         """table could be an astropy table or a row
         `table` is given when the class is initialized,
         `rename_dict` is given when a survey child class is defined.
         """
         # rename ra and dec by default
+        if rename_dict is None:
+            rename_dict = dict()
         self._rename_dict = {'ra': ['ra', 'RA'], 'dec': ['dec', 'DEC', 'Dec']}
         self._rename_dict.update(rename_dict)
 

@@ -48,7 +48,7 @@ def mean(array, weights=None):
     np_array = np.array(array)  # avoid changing the original array
     if weights is None or not any(select_good(weights)) or np.nansum(weights) == 0:
         return np.average(np_array[good_ind])
-    good_ind &= select_good(weights)
+    good_ind = good_ind & select_good(weights)
     np_weights = np.array(weights)  # avoid changing the original array
     return np.average(np_array[good_ind], weights=np_weights[good_ind])
 
@@ -64,7 +64,7 @@ def std(array, weights=None):
     np_array = np.array(array)  # avoid changing the original array
     if weights is None or not any(select_good(weights)) or np.nansum(weights) == 0:
         return np.std(np_array[good_ind], ddof=1)
-    good_ind &= select_good(weights)
+    good_ind = good_ind & select_good(weights)
     np_weights = np.array(weights)  # avoid changing the original array
     np_array = np_array[good_ind]
     np_weights = np_weights[good_ind]
@@ -352,7 +352,7 @@ def binning(x, bins=50, x_step=None,
 
 # %% func: value_in_bin
 def value_in_bin(index_in_bin=None, data=None, weights=None,
-                 at_least=1, func=mean, bar=None, bootstrap=0):
+                 at_least=1, func=mean, bar=lambda: None, bootstrap=0):
     """bootstrap: 0: no bootstrap; 1: mean of the bootstrap;
         2: std of the bootstrap; 3: confidence interval; 4: return the res object.
     """
@@ -369,26 +369,28 @@ def value_in_bin(index_in_bin=None, data=None, weights=None,
         select = select & (weights_in_bin != 0.)
 
     bootstrap_args = dict(
-        n_resamples=100,
-        vectorized=False, paired=True,
+        n_resamples=500,
+        # vectorized=False,
+        paired=True,
         confidence_level=0.68,
         random_state=42
     )
 
-    if bar is not None:
+    def bar_and_return(value, bar=bar):
         bar()
+        return value
 
     if bootstrap and (at_least <= 1):
         at_least = 2
     if select.sum() < at_least:
         if bootstrap == 1:
-            return np.nan
+            return bar_and_return(np.nan)
         elif bootstrap == 2:
-            return np.nan
+            return bar_and_return(np.nan)
         elif bootstrap == 3:
-            return np.array([np.nan, np.nan])
+            return bar_and_return(np.array([np.nan, np.nan]))
         elif bootstrap == 4:
-            return stats.bootstrap(([np.nan, np.nan],), func, **bootstrap_args)
+            return bar_and_return(stats.bootstrap(([np.nan, np.nan],), func, **bootstrap_args))
 
         # no bootstrap
         if weights is None:
@@ -397,15 +399,15 @@ def value_in_bin(index_in_bin=None, data=None, weights=None,
             func_return_test = func(np.array([1., 1.]), weights=np.array([1., 1.]))
         return_is_single = not hasattr(func_return_test, '__len__')
         if return_is_single:
-            return np.nan
+            return bar_and_return(np.nan)
         else:
-            return np.full(len(func_return_test), np.nan)
+            return bar_and_return(np.full(len(func_return_test), np.nan))
 
     if not bootstrap:
         if weights is None:
-            return func(data_in_bin)
+            return bar_and_return(func(data_in_bin))
         else:
-            return func(data_in_bin, weights=weights_in_bin)
+            return bar_and_return(func(data_in_bin, weights=weights_in_bin))
 
     # bootstrap
     if weights is None:
@@ -413,16 +415,20 @@ def value_in_bin(index_in_bin=None, data=None, weights=None,
     else:
         bootstrap_data = (data_in_bin, weights_in_bin)
 
-    res = stats.bootstrap(bootstrap_data, func, **bootstrap_args)
+    try:
+        res = stats.bootstrap(bootstrap_data, func, **bootstrap_args)
+    except Exception:
+        bootstrap_args['paired'] = False
+        res = stats.bootstrap(bootstrap_data, func, **bootstrap_args)
 
     if bootstrap == 1:
-        return np.nanmean(res.bootstrap_distribution)
+        return bar_and_return(np.nanmean(res.bootstrap_distribution))
     elif bootstrap == 2:
-        return res.standard_error
+        return bar_and_return(res.standard_error)
     elif bootstrap == 3:
-        return res.confidence_interval
+        return bar_and_return(res.confidence_interval)
     elif bootstrap == 4:
-        return res
+        return bar_and_return(res)
 
 
 # %% func: bin_x
@@ -456,13 +462,6 @@ def bin_x(x, y, weights=None,
     x_edges, index_in_bin = binning(
         x, x_left=x_left, x_right=x_right, bins=bins, x_step=x_step)
 
-    def _func_for_all_bins(func, y, weights, index_in_bin, bootstrap):
-        if weights is None:
-            return np.array([value_in_bin(ind, y, func=func, bootstrap=bootstrap) for ind in index_in_bin])
-        else:
-            return np.array([value_in_bin(ind, y, weights=weights, func=func, bootstrap=bootstrap)
-                            for ind in index_in_bin])
-
     if func is None:
         if mode == 'mean':
             func = mean
@@ -475,13 +474,22 @@ def bin_x(x, y, weights=None,
             from functools import partial
             errfunc = partial(weighted_percentile, percentile=np.sort(median_percentile))
 
+    value_in_bin_kwargs = dict(func=func)
+    if weights is not None:
+        value_in_bin_kwargs['weights'] = weights
+
     if bootstrap:
-        ress = _func_for_all_bins(func, y, weights, index_in_bin, bootstrap=4)
+        with misc.Bar(len(x_edges) - 1) as bar:
+            value_in_bin_kwargs['bootstrap'] = 4
+            ress = [value_in_bin(ind, y, bar=bar, **value_in_bin_kwargs) for ind in index_in_bin]
         ys = [np.nanmean(res.bootstrap_distribution) for res in ress]
         y_err = [res.confidence_interval for res in ress]
+
     else:
-        ys = _func_for_all_bins(func, y, weights, index_in_bin, bootstrap=0)
-        y_err = _func_for_all_bins(errfunc, y, weights, index_in_bin, bootstrap=0)
+        value_in_bin_kwargs['bootstrap'] = 0
+        ys = [value_in_bin(ind, y, **value_in_bin_kwargs) for ind in index_in_bin]
+        value_in_bin_kwargs['func'] = errfunc
+        y_err = [value_in_bin(ind, y, **value_in_bin_kwargs) for ind in index_in_bin]
 
     if mode == 'median' or bootstrap:
         y_err = np.array(y_err).T
