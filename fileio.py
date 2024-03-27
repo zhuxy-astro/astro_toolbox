@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 
 # %% import
-from astropy.table import Table  # , hstack
 import h5py
 import numpy as np
-# import pandas as pd
+from astropy.table import Table  # , hstack
 from astropy.io import fits
+# import pandas as pd
 
 
 # %% func: read_hdf5

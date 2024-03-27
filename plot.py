@@ -2,16 +2,18 @@
 # -*- coding: utf-8 -*-
 
 # %% import
-import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
 from functools import wraps
 import os
 import warnings
+
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
 # from pandas import DataFrame, Series
 # from astropy.table import Table
-from . import attr
 # import astro_toolbox.calc as calc
+
+from . import attr
 from . import calc
 
 # %% settings
@@ -213,36 +215,84 @@ def img(fig, ax, x_edges, y_edges, z, plt_args, plot_bg=False, **kwargs):
 
 
 @set_plot()
-def contour(fig, ax, x_edges, y_edges, z, plt_args,
-            contour_levels=15,
-            **kwargs):
+def _contour(fig, ax, x_edges, y_edges, z, plt_args,
+             plot_contourf=False,
+             contour_levels=15,
+             **kwargs):
     """
+    Plot contour or contourf of the 2-d map, based on whether plot_contourf is set.
     Parameters
     ----------
     x_edges, y_edges: Arrays of edges, NOT the centers. The dim of edges should be len(z) + 1.
     z: 2-d binned map, or Column with data being the 2-d map.
+
+    contour_levels:
+        if int, the number of levels;
+        if a float between 0 and 1, it is the percentile, and z is treated as normalized histogram;
+        if a list of float between 0 and 1, it is the list of percentiles, and z is treated as normalized histogram;
+        if a list of float not between 0 and 1, it is the list of levels of z.
     """
-    default_plt_args = {
-        'colors': 'k',
-        'linewidths': 0.5,
-        'linestyles': 'solid'
-    }
+    if plot_contourf:
+        default_plt_args = {
+            'cmap': 'coolwarm',
+        }
+    else:
+        default_plt_args = {
+            'colors': 'k',
+            'linewidths': 0.5,
+            'linestyles': 'solid'
+        }
     # cmap and colors shouldn't be set at the same time
     # use colors by default, unless cmap is set
-    if plt_args.get('cmap') is None:
-        plt_args.setdefault('colors', default_plt_args.pop('colors'))
+        if plt_args.get('cmap') is None:
+            plt_args.setdefault('colors', default_plt_args.pop('colors'))
     # else plt_args has cmap
     if plt_args is not None:
         default_plt_args.update(plt_args)
     plt_args = default_plt_args
 
+    try:
+        iter(contour_levels)
+        levels_is_list = True
+    except TypeError:
+        levels_is_list = False
+
+    if not levels_is_list and isinstance(contour_levels, int):
+        assert contour_levels > 0, 'contour_levels should be a positive integer.'
+        levels = np.linspace(kwargs['z_left'], kwargs['z_right'], contour_levels)
+
+    elif not levels_is_list and isinstance(contour_levels, float):
+        assert 0 < contour_levels < 1, 'contour_levels should be a float between 0 and 1.'
+        percentile_outside = 1 - contour_levels
+        levels = calc.weighted_percentile(weights=z, percentile=percentile_outside)
+        levels = np.linspace(levels, z.max(), 15)
+
+    elif levels_is_list and all([0 <= i <= 1 for i in contour_levels]):
+        percentile_outside = 1 - np.array(contour_levels)
+        levels = calc.weighted_percentile(weights=z, percentile=percentile_outside)
+        levels = np.sort(levels)
+        if levels[-1] < z.max():
+            levels = np.append(np.array(levels), z.max())
+
+    elif levels_is_list:
+        levels = contour_levels
+
+    else:
+        raise ValueError('contour_levels should be an int, a float between 0 and 1, or a list.')
+
     x_centers = (x_edges[1:] + x_edges[:-1]) / 2
     y_centers = (y_edges[1:] + y_edges[:-1]) / 2
-    x_centers_mesh, y_centers_mesh = np.meshgrid(x_centers, y_centers)
-    img = ax.contour(x_centers_mesh, y_centers_mesh, z,
-                     levels=np.linspace(kwargs['z_left'], kwargs['z_right'], contour_levels),
-                     **plt_args,
-                     )
+
+    if plot_contourf:
+        img = ax.contourf(x_centers, y_centers, z,
+                          levels=levels,
+                          **plt_args,
+                          )
+    else:
+        img = ax.contour(x_centers, y_centers, z,
+                         levels=levels,
+                         **plt_args,
+                         )
     return img
 
 
@@ -344,6 +394,7 @@ def bin_map(x, y, z=None,
             select=slice(None),
             plot_contour=1, plot_img=1,
             z_log=False,
+            contour_levels=15,
             step_follow_window=False,
             contour_args=None, img_args=None,
             **kwargs):
@@ -365,29 +416,31 @@ def bin_map(x, y, z=None,
     x, y, [z]: Column or simply 1-d array of data.
     plot_contour=1,  # 0: no contour, 1: contour of z, 2: contour of histogram
     plot_img=1,  # 0: no img, 1: img of z, 2: img of histogram
+    contour_levels is passed to plot._contour.
 
     In kwargs:
-        everything of calc.bin_map, img and contour
+        everything of calc.bin_map, img and _contour
 
     Returns
     -------
     fig, ax
     """
+    if kwargs.get('plt_args') is not None:
+        raise ValueError('plt_args is not allowed in bin_map. Use img_args and contour_args instead.')
+
     select = attr.combine_selections(select, reference=x)
     z_map, x_edges, y_edges = calc.bin_map(x, y, z, select=select,
                                            step_follow_window=step_follow_window, **kwargs)
     if z_log:
         z_map = np.log10(z_map)
         kwargs.setdefault('cbar', False)
+
     if z is None and not step_follow_window:
         # calc histogram, but not the real number in each window
         kwargs.setdefault('cbar', False)
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
     # edges is left here not converted into centers because this is done in scatter and img.
-
-    if kwargs.get('plt_args') is not None:
-        raise ValueError('plt_args is not allowed in bin_map. Use img_args and contour_args instead.')
 
     if z is None:
         z_map = attr.array2column(z_map, name='hist')
@@ -397,29 +450,29 @@ def bin_map(x, y, z=None,
             attr.set(z_map, label='weighted counts')
         if plot_img:
             z_min_ = -int(z_log)  # -1 if z is in log scale, otherwise 0
+            z_min_ = np.max([z_min_, kwargs.get('at_least', 0)])
             z_map_with_nan = attr.sift(z_map, min_=z_min_, inplace=False)
             fig, ax = img(x_edges, y_edges, z_map_with_nan,
                           plt_args=img_args, select=select, **kwargs)
             kwargs['fig_ax'] = (fig, ax)
         if plot_contour:
-            # kwargs['cmap'] = None
-            fig, ax = contour(x_edges, y_edges, z_map,
-                              plt_args=contour_args, select=select,
-                              **kwargs)
+            z_map /= np.nansum(z_map)
+            fig, ax = _contour(x_edges, y_edges, z_map, contour_levels=contour_levels,
+                               plt_args=contour_args, select=select,
+                               **kwargs)
     else:
         z_map = attr.array2column(z_map, meta_from=z)
         if plot_img:
             fig, ax = img(x_edges, y_edges, z_map,
                           plt_args=img_args, select=select, **kwargs)
             kwargs['fig_ax'] = (fig, ax)
-        # kwargs['cmap'] = None
         if plot_contour == 1:
-            fig, ax = contour(x_edges, y_edges, z_map,
-                              plt_args=contour_args, select=select, **kwargs)
+            fig, ax = _contour(x_edges, y_edges, z_map, contour_levels=contour_levels,
+                               plt_args=contour_args, select=select, **kwargs)
         elif plot_contour == 2:
             hist_map, x_edges, y_edges = calc.bin_map(x, y, **kwargs)
-            fig, ax = contour(x_edges, y_edges, hist_map,
-                              plt_args=contour_args, select=select, **kwargs)
+            fig, ax = _contour(x_edges, y_edges, hist_map, contour_levels=contour_levels,
+                               plt_args=contour_args, select=select, **kwargs)
     return fig, ax
 
 
@@ -427,11 +480,13 @@ def bin_map(x, y, z=None,
 def contour_scatter(x, y,
                     select=slice(None),
                     contour_args=None, scatter_args=None,
-                    percentile=0.99,
+                    contour_levels=15,
+                    plot_scatter=True,
+                    plot_contourf=True,
                     **kwargs):
     """
-    `percentile` could be a number or an array. If a number, a set of 20 levels is used.
     `plt.contour` is not good at dealing with sharp edges.
+    `contour_levels` is passed to plot._contour.
     In kwargs:
         everything of calc.bin_map and scatter. `weights` is within kwargs and passed to calc.bin_map.
     Need to set filenames manually.
@@ -439,49 +494,35 @@ def contour_scatter(x, y,
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in contour_scatter. Use scatter_args and contour_args instead.')
 
-    default_scatter_args = dict(
-        s=10,
-        rasterized=True,
-        c='cornflowerblue',
-        alpha=0.5,
-        lw=0)
-    if scatter_args is not None:
-        default_scatter_args.update(scatter_args)
-    scatter_args = default_scatter_args
+    if plot_scatter:
+        default_scatter_args = dict(
+            s=10,
+            rasterized=True,
+            c='cornflowerblue',
+            alpha=0.5,
+            lw=0)
+        if scatter_args is not None:
+            default_scatter_args.update(scatter_args)
+        scatter_args = default_scatter_args
 
-    fig, ax = scatter(x, y,
-                      plt_args=scatter_args, select=select,
-                      filename='',
-                      **kwargs)
+        fig, ax = scatter(x, y,
+                          plt_args=scatter_args, select=select,
+                          filename='',
+                          **kwargs)
+    else:
+        fig, ax = plt.subplots()
 
     z_map, x_edges, y_edges = calc.bin_map(x, y, select=select, **kwargs)
     z_map /= np.nansum(z_map)
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
 
-    z_map = attr.array2column(z_map, name='contour_scatter')
-    percentile_out = 1 - np.array(percentile)
-    try:
-        iter(percentile)
-        # percentile is a list
-        hist_threshold = calc.weighted_percentile(weights=z_map, percentile=percentile_out)
-        hist_threshold = np.sort(hist_threshold)
-        # list here is to make sure the max is appended, not added.
-        if hist_threshold[-1] < z_map.max():
-            hist_threshold = np.append(np.array(hist_threshold), z_map.max())
-    except TypeError:
-        hist_threshold = calc.weighted_percentile(weights=z_map, percentile=percentile_out)
-        # hist_threshold = calc.hist_percentile(z_map, [percentile])
-        hist_threshold = np.linspace(hist_threshold, z_map.max(), 20)
+    fig, ax = _contour(
+        x_edges, y_edges, z_map,
+        plt_args=contour_args, contour_levels=contour_levels, plot_contourf=plot_contourf,
+        fig_ax=(fig, ax), cbar=False,
+        **kwargs)
 
-    x_centers = (x_edges[1:] + x_edges[:-1]) / 2
-    y_centers = (y_edges[1:] + y_edges[:-1]) / 2
-    if contour_args is None:
-        contour_args = dict()
-    contour_args.setdefault('cmap', 'coolwarm')
-    ax.contourf(x_centers, y_centers, z_map,
-                levels=hist_threshold,
-                **contour_args)
     return fig, ax
 
 

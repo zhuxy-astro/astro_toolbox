@@ -2,30 +2,17 @@
 # -*- coding: utf-8 -*-
 
 # %% import
-import requests
 import os
-from astropy.table import Table
-import numpy as np
-from PIL import Image
-import matplotlib.pyplot as plt
+import requests
 from multiprocessing.pool import ThreadPool
 from functools import partial
 
-# unify the usage of progress bar
-# using the astropy progress bar will partly mess up the output in multiprocessing
-try:
-    from alive_progress import alive_bar
-    progressbar = alive_bar
+import numpy as np
+from astropy.table import Table
+import matplotlib.pyplot as plt
+from PIL import Image
 
-    def update(bar):
-        bar()
-
-except ImportError:
-    from astropy.utils.console import ProgressBar
-    progressbar = ProgressBar
-
-    def update(bar):
-        bar.update()
+from .misc import Bar
 
 
 # %% class Naming
@@ -65,6 +52,7 @@ class _SurveyBase:
     Usage:
     - Download one image and show in plt:
     `dl.SDSSImg.show_fig(table_row, timeout=None, naming_seq=None)`
+        For a one-liner, use `dl.SDSSImg.show_fig(Table([[35.7], [-4.9]], names=['ra', 'dec'])[0])`
     - Get the url for one image:
     `dl.SDSSImg.get_url(table_row, dr='dr17', scale=0.2, length=200, opt='')`
     - Download multiple images:
@@ -234,12 +222,12 @@ class _SurveyBase:
             filename = naming_seq(table_row) + suffix + self._extension
         except ValueError:  # no valid name
             invalid_table.add_row(table_row)
-            update(bar)
+            bar()
             return
 
         savepath = os.path.join(savedir, filename)
         if not overwrite and os.path.exists(savepath):
-            update(bar)
+            bar()
             return
 
         # TODO: sometimes rows may fail but not in the list
@@ -251,10 +239,10 @@ class _SurveyBase:
             img_content = response.content
             with open(savepath, 'wb') as f:
                 f.write(img_content)
-            update(bar)
+            bar()
         except ValueError:  # no valid image, often when the http returns something non-image
             invalid_table.add_row(table_row)
-            update(bar)
+            bar()
         except Exception:  # as err:  # other errors
             # print(err)
             # this will not catch the above ValueError
@@ -284,7 +272,7 @@ class _SurveyBase:
 
         task_table = self._table.copy()
 
-        with progressbar(len(task_table)) as bar:
+        with Bar(len(task_table)) as bar:
             try_i = 0
             for try_i in range(try_loops):
                 num_left = len(task_table)
@@ -311,14 +299,14 @@ class SDSS(_SurveyBase):
         _SDSS_RENAME_DICT = {
             'plate': ['plate', 'plateid', 'plate_id', 'PLATE', 'PLATEID', 'PLATE_ID'],
             'mjd': ['mjd', 'MJD'],
-            'fiber': ['fiber', 'fiberid', 'fiber_id', 'FIBER', 'FIBERID', 'FIBER_ID'],
+            'fiberid': ['fiber', 'fiberid', 'fiber_id', 'FIBER', 'FIBERID', 'FIBER_ID'],
             'specobjid': ['specobjid', 'SPECOBJID', 'specobj_id', 'SPECOBJ_ID',
                           'spec_id', 'SPEC_ID', 'specid', 'SPECID'],
         }
         _SurveyBase.__init__(self, *args, rename_dict=_SDSS_RENAME_DICT, **kwargs)
 
     _timeout = 15
-    name_plate_mjd_fiber = Naming(['plate', 'mjd', 'fiber'], '{0}, {1}, {2}')
+    name_plate_mjd_fiberid = Naming(['plate', 'mjd', 'fiberid'], '{0}, {1}, {2}')
 
 
 class SDSSImg(SDSS):
@@ -328,7 +316,7 @@ class SDSSImg(SDSS):
     @classmethod
     def naming_seq(cls, table_row):
         return cls.set_naming_priority(table_row,
-                                       [cls.name_plate_mjd_fiber,
+                                       [cls.name_plate_mjd_fiberid,
                                         cls.name_ra_dec],
                                        )
 
@@ -355,7 +343,7 @@ class SDSSSpec(SDSS):
     @classmethod
     def naming_seq(cls, table_row):
         return cls.set_naming_priority(table_row,
-                                       [cls.name_plate_mjd_fiber,
+                                       [cls.name_plate_mjd_fiberid,
                                         cls.name_ra_dec,
                                         cls.name_specobjid,
                                         ],

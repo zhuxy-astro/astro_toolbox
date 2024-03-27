@@ -1,12 +1,14 @@
 # %% import
+from functools import wraps
+# import copy
+
 import numpy as np
 import matplotlib.pyplot as plt
-# import pandas as pd
 from astropy.table import Table, Column
 from astropy.table.column import MaskedColumn
-# import copy
-from functools import wraps
 from numpy.lib.recfunctions import structured_to_unstructured
+# import pandas as pd
+
 from . import calc
 
 
@@ -212,7 +214,7 @@ def _compare(list_to_compare, threshold, min_or_max):
             raise Exception(f"The {name} is not comparale to the list.")
         drop_list = drop_list | (list_to_compare * min_or_max >= threshold_i * min_or_max)
     """
-    drop_list = drop_list | (list_to_compare * min_or_max >= threshold * min_or_max)
+    drop_list = drop_list | (list_to_compare * min_or_max > threshold * min_or_max)
     return drop_list
 
 

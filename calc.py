@@ -3,13 +3,15 @@
 
 # %% import
 import sys
+
 import numpy as np
 from astropy.cosmology import Planck15, FlatLambdaCDM
 from scipy.interpolate import interp1d
-from . import attr, misc
 from scipy.spatial import KDTree
 from scipy.optimize import curve_fit as scipy_curve_fit
 from scipy import stats
+
+from . import attr, misc
 
 
 # %% func: choose good and calc min, max, mean and median
@@ -121,6 +123,11 @@ def vmax_inv(z_left, z_right, z_min, z_max,
     return weight
 
 
+# %% func: ba_to_incl
+def ba_to_incl(ba, alpha=0.15):
+    return np.arcsin(np.sqrt((1 - ba ** 2) / (1 - alpha ** 2))) * 180 / np.pi
+
+
 # %% func: to_radian
 def to_radian(deg, reset_zero=False):
     if reset_zero:
@@ -211,6 +218,37 @@ def curve_fit(f, xdata, ydata, *args, **kwargs):
     ydata = np.array(ydata.copy())
     select_good = np.isfinite(xdata) & np.isfinite(ydata)
     return scipy_curve_fit(f, xdata[select_good], ydata[select_good], *args, **kwargs)
+
+
+# %% func: select_value_edges
+def select_value_edges(data, edges, name=None, math=False):
+    """return the list of select arrays with length = len(edges) + 1
+    """
+    if name is None:
+        try:
+            name = data.name
+        except AttributeError:
+            name = 'x'
+    if math:
+        le = r'\leq'
+    else:
+        le = '<='
+    select_list = []
+    select_list.append(attr.array2column(
+        data <= edges[0], name=f'{name}{le}{edges[0]:.3g}'))
+    for i in range(len(edges) - 1):
+        select_name = f'{edges[i]:.3g}<{name}{le}{edges[i + 1]:.3g}'
+        if math:
+            select_name = r'$' + select_name + r'$'
+        select_list.append(attr.array2column(
+            (data > edges[i]) & (data <= edges[i + 1]),
+            name=select_name))
+    name = f'{name}>{edges[-1]:.3g}'
+    if math:
+        select_name = r'$' + name + r'$'
+    select_list.append(attr.array2column(
+        data > edges[-1], name=select_name))
+    return select_list
 
 
 # %% func: weighted_median

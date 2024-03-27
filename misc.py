@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 
 # %% import
-from time import time
 import sys
 import numpy as np
 
 
 # %% progress bar
+# unify the usage of progress bar
+# using the astropy progress bar will partly mess up the output in multiprocessing
 try:
     from alive_progress import alive_bar as Bar  # func
 except ImportError:
@@ -25,6 +26,7 @@ def progress_bar(prog, scale):
     # 做一个手动的进度条，用于循环。
     # 适合for prog in range(scale)的环境
     # 但是print的过程对超大循环来说可能有点费时间。现在可用alive_bar替换。
+    from time import time
     if prog == 0:
         global start_time
         start_time = time()
