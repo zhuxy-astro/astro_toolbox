@@ -85,16 +85,10 @@ def clean_table(t: Table):
 
 
 # %% combine selections
-def combine_selections(list_of_selects, reference=None):
-    """
-    Input a selection array or a list of selections, output the join of them in Column.
-    The name of the output is the join of the names, separated by ', ', set in Column.name.
-    The `reference` is an array in the same dimension, used to determine whether the
-        `list_of_selects` is single or multiple, and is recommended to be set.
-
-    Returns
-    -------
-    select_result : an bool array with the combined name in attr
+def _status_of_list_of_selects(list_of_selects, reference=None):
+    """if list_of_selects is empty, return 0;
+    if it is a single selection, return 1;
+    if it is a list of selections, return 2.
     """
 
     # the comparison between Column and slice(None) is an array of bool
@@ -108,11 +102,7 @@ def combine_selections(list_of_selects, reference=None):
         or (len(list_of_selects) == 0))
 
     if list_of_selects_is_empty:
-        if reference is not None:
-            # TODO: reference may be masked!
-            return Column(np.ones(len(reference), dtype=bool), name='')
-        else:
-            return slice(None)  # note that no name is returned here
+        return 0
 
     if reference is not None:
         list_of_selects_is_single = len(list_of_selects) == len(reference)
@@ -122,17 +112,64 @@ def combine_selections(list_of_selects, reference=None):
             list_of_selects_is_single = False
         except TypeError:
             list_of_selects_is_single = True
-
     if list_of_selects_is_single:
-        return array2column(list_of_selects)
+        return 1
 
-    select_result = np.ones_like(list_of_selects[0], dtype=bool)
+    return 2
+
+
+def combine_selection_names(list_of_selects, reference=None, list_status=None):
+    """return the connection of names joined by ', '
+    """
+    if list_status is None:
+        list_status = _status_of_list_of_selects(list_of_selects, reference)
+
+    if list_status == 0:
+        return ''
+
+    if list_status == 1:
+        if hasattr(list_of_selects, 'name'):
+            return list_of_selects.name
+        else:
+            return ''
+
     name_list = []
     for s in list_of_selects:
-        select_result &= s
         if hasattr(s, 'name'):
             name_list += [s.name]
     name_combined = ', '.join(name_list)
+
+    return name_combined
+
+
+def combine_selections(list_of_selects, reference=None):
+    """
+    Input a selection array or a list of selections, output the join of them in Column.
+    The name of the output is set in Column.name.
+    The `reference` is an array in the same dimension, used to determine whether the
+        `list_of_selects` is single or multiple, and is recommended to be set.
+
+    Returns
+    -------
+    select_result : an bool array with the combined name in attr
+    """
+    list_status = _status_of_list_of_selects(list_of_selects, reference)
+
+    if list_status == 0:
+        if reference is not None:
+            # TODO: reference may be masked!
+            return Column(np.ones(len(reference), dtype=bool), name='')
+        else:
+            return slice(None)  # note that no name is returned here
+
+    elif list_status == 1:
+        return array2column(list_of_selects)
+
+    select_result = np.ones_like(list_of_selects[0], dtype=bool)
+    for s in list_of_selects:
+        select_result &= s
+    name_combined = combine_selection_names(list_of_selects, reference, list_status)
+
     return array2column(select_result, name=name_combined)
 
 
@@ -354,9 +391,12 @@ def choose_value(kwargs: dict,
 # %% wrap: set values
 def get_name(xyz, xyz_str, to_latex=False):
     """
-    First priority    : return x.name like 'mstar'
+    If x itself is a str, return x.
+    Second priority    : return x.name like 'mstar'
     If x has no `name`: return xyz_str like 'x', or r'$X$' if to_latex is set
     """
+    if isinstance(xyz, str):
+        return xyz
     if hasattr(xyz, 'name'):
         return xyz.name
     else:

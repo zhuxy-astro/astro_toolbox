@@ -14,7 +14,7 @@ from scipy import stats
 from . import attr, misc
 
 
-# %% func: choose good and calc min, max, mean and median
+# %% func: choose good values
 def select_good(array):
     # returns an array of bools indicating whether the values are not masked, not nan and not infinite.
     if hasattr(array, 'copy'):
@@ -37,6 +37,7 @@ def good_values(array):
     return np_array[good_ind]
 
 
+# %% func: min, max, mean, std and median
 def min(array):
     return np.nanmin(good_values(array))
 
@@ -55,10 +56,6 @@ def mean(array, weights=None):
     return np.average(np_array[good_ind], weights=np_weights[good_ind])
 
 
-def median(array, weights=None):
-    return weighted_percentile(array, weights=weights)
-
-
 def std(array, weights=None):
     """ddof=1
     """
@@ -74,6 +71,10 @@ def std(array, weights=None):
     variance = mean((np_array - average)**2, weights=np_weights)
     N = len(np_array)
     return np.sqrt(variance * N / (N - 1))
+
+
+def median(array, weights=None):
+    return weighted_percentile(array, weights=weights)
 
 
 # %% func: vmax_inv
@@ -128,8 +129,8 @@ def ba_to_incl(ba, alpha=0.15):
     return np.arcsin(np.sqrt((1 - ba ** 2) / (1 - alpha ** 2))) * 180 / np.pi
 
 
-# %% func: to_radian
-def to_radian(deg, reset_zero=False):
+# %% func: deg_to_radian
+def deg_to_radian(deg, reset_zero=False):
     if reset_zero:
         deg = deg - 360 * (deg > 180)
     return deg / 180 * np.pi
@@ -214,15 +215,35 @@ def schechter_log(logx, amp, logx_c, alpha):
 
 # %% func: curve_fit
 def curve_fit(f, xdata, ydata, *args, **kwargs):
-    xdata = np.array(xdata.copy())
-    ydata = np.array(ydata.copy())
-    select_good = np.isfinite(xdata) & np.isfinite(ydata)
-    return scipy_curve_fit(f, xdata[select_good], ydata[select_good], *args, **kwargs)
+    select_good_xy = select_good(xdata) & select_good(ydata)
+    return scipy_curve_fit(f, xdata[select_good_xy], ydata[select_good_xy], *args, **kwargs)
+
+
+# %% func: fraction
+def fraction(select, within=slice(None), weights=None, print_info=False):
+    """In simple calculating the fraction without `within` and just `weights`, the function is equivalent to `mean`.
+    """
+    # combine `within` when it is a list, and save `within` from slice(None)
+    within = attr.combine_selections(within, reference=select)
+    within = np.array(within, dtype=bool)
+    select = np.array(select, dtype=bool)
+    within = within & select_good(select)
+
+    if weights is None:
+        denominator = np.nansum(within)
+        numerator = np.nansum(select & within)
+    else:
+        denominator = np.nansum(weights[within])
+        numerator = np.nansum(weights[select & within])
+
+    if print_info:
+        print(f'{numerator} / {denominator}')
+    return numerator / denominator
 
 
 # %% func: select_value_edges
 def select_value_edges(data, edges, name=None, math=False):
-    """return the list of select arrays with length = len(edges) + 1
+    """return the list of select arrays cut by the edges, with length = len(edges) + 1
     """
     if name is None:
         try:
@@ -420,6 +441,7 @@ def value_in_bin(index_in_bin=None, data=None, weights=None,
 
     if bootstrap and (at_least <= 1):
         at_least = 2
+
     if select.sum() < at_least:
         if bootstrap == 1:
             return bar_and_return(np.nan)
@@ -482,6 +504,7 @@ def bin_x(x, y, weights=None,
           x_left=None, x_right=None,
           select=slice(None),
           bootstrap=False,
+          at_least=1,
           **kwargs):
     """
     `mode` could be 'mean' or 'median'. Overwritten by `func` and `errfunc`.
@@ -512,7 +535,7 @@ def bin_x(x, y, weights=None,
             from functools import partial
             errfunc = partial(weighted_percentile, percentile=np.sort(median_percentile))
 
-    value_in_bin_kwargs = dict(func=func)
+    value_in_bin_kwargs = dict(func=func, at_least=at_least)
     if weights is not None:
         value_in_bin_kwargs['weights'] = weights
 
@@ -520,6 +543,7 @@ def bin_x(x, y, weights=None,
         with misc.Bar(len(x_edges) - 1) as bar:
             value_in_bin_kwargs['bootstrap'] = 4
             ress = [value_in_bin(ind, y, bar=bar, **value_in_bin_kwargs) for ind in index_in_bin]
+
         ys = [np.nanmean(res.bootstrap_distribution) for res in ress]
         y_err = [res.confidence_interval for res in ress]
 
@@ -738,28 +762,6 @@ def hist(x, weights=None,
     bin_center = (bin_edges[:-1] + bin_edges[1:]) / 2
 
     return hist, hist_err, bin_center
-
-
-# %% func: fraction
-def fraction(select, within=slice(None), weights=None, print_info=False):
-    """In simple calculating the fraction without `within` and just `weights`, the function is equivalent to `mean`.
-    """
-    # combine `within` when it is a list, and save `within` from slice(None)
-    within = attr.combine_selections(within, reference=select)
-    within = np.array(within, dtype=bool)
-    select = np.array(select, dtype=bool)
-    within = within & select_good(select)
-
-    if weights is None:
-        denominator = np.nansum(within)
-        numerator = np.nansum(select & within)
-    else:
-        denominator = np.nansum(weights[within])
-        numerator = np.nansum(weights[select & within])
-
-    if print_info:
-        print(f'{numerator} / {denominator}')
-    return numerator / denominator
 
 
 # %% loess2d from Kai

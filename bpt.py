@@ -31,7 +31,7 @@ import numpy as np
     ax_oi.plot(*bpt.oi_liner_seyfert_line_points(), 'k--', linewidth=2)
 
     fig.show()
-    fig.savefig('figures/bpt-cen.pdf')
+    fig.savefig('figures/bpt.pdf')
 ```
 """
 
@@ -55,7 +55,7 @@ def _straight_line_calculator(k, b):
 
 def _line_points_generator(func, x_left, x_right, n_points=50):
     """usage:
-        # in calc.py
+        # in bpt.py
         nii_agn_comp_line_points = _line_points_generator(nii_agn_comp, -2, 0.3, 50)
         # in other files
         plt.plot(*bpt.nii_agn_comp_line_points(n_points=200))

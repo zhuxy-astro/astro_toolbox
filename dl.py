@@ -51,16 +51,16 @@ class _SurveyBase:
 
     Usage:
     - Download one image and show in plt:
-    `dl.SDSSImg.show_fig(table_row, timeout=None, naming_seq=None)`
+        `dl.SDSSImg.show_fig(table_row, timeout=None, naming_seq=None)`
         For a one-liner, use `dl.SDSSImg.show_fig(Table([[35.7], [-4.9]], names=['ra', 'dec'])[0])`
     - Get the url for one image:
-    `dl.SDSSImg.get_url(table_row, dr='dr17', scale=0.2, length=200, opt='')`
+        `dl.SDSSImg.get_url(table_row, dr='dr17', scale=0.2, length=200, opt='')`
     - Download multiple images:
-    ```
-    failed_table, invalid_table = dl.SDSSImg(table).get_figs(
-        savedir='img', overwrite=False, naming_seq=None, suffix='',
-        try_loops=3, timeout=None)
-    ```
+        ```
+        failed_table, invalid_table = dl.SDSSImg(table).get_figs(
+            savedir='img', overwrite=False, naming_seq=None, suffix='',
+            try_loops=3, timeout=None)
+        ```
     If another naming sequence is needed, use it in the function arg like
     `naming_seq=dl.SDSSImg.naming_seq`
 

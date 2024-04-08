@@ -43,15 +43,54 @@ matplotlib.rc('patch', edgecolor=c_frame)
 # matplotlib.rc('font', family='serif', serif="Times New Roman", size=18)
 matplotlib.rc('font', size=18)
 matplotlib.rc('mathtext', fontset='cm')
-matplotlib.rc('figure.subplot', bottom=0.125, left=0.14)  # to avoid text being covered
-matplotlib.rc('savefig', format='pdf', dpi=300)
+matplotlib.rc('figure.subplot', bottom=0.125, left=0.2)  # to avoid labels being covered by the window boundary
+matplotlib.rc('axes', labelpad=1.)  # make the labels closer to the axis, by default 4.0
+matplotlib.rc('savefig', format='pdf', dpi=300, directory='~/Downloads')
 
 
-# %% wrapper: set_title_filename
-# TODO: decorate set_plot, bin_map, contour_scatter
+# %% func: save_fig
+def save_fig(fig, x, y=None, z=None, savedir='figures', special_suffix='', select=[], filename=None):
+    """
+    save file as 'figures/X-Y-Z-{special_suffix}, {title}.pdf' by default.
+    If filename is set to '', no file will be saved.
+    Used by plotting functions not decorated by set_plot.
+    Requirement for the definition of funcs using this func:
+        select=slice(None), savedir='figures', filename=None
+
+    special_suffix is usually used for different plot styles, for example 'contour'.
+    """
+    if filename == '':
+        return
+
+    if filename is None:
+        name_list = []
+        name_list.append(attr.get_name(x, 'X'))
+        if y is not None:
+            name_list.append(attr.get_name(y, 'Y'))
+        if z is not None:
+            name_list.append(attr.get_name(z, 'Z'))
+
+        if special_suffix != '':
+            name_list += [special_suffix]
+        filename = '-'.join(name_list)
+
+        select_name = attr.combine_selection_names(select)
+        if select_name != '':
+            filename = f'{filename}, {select_name}'
+    # else, use the overwritten filename
+
+    filename = f'{filename}.pdf'
+
+    if not os.path.exists(savedir):
+        os.mkdir(savedir)
+
+    fig.savefig(os.path.join(savedir, filename))
+
 
 # %% wrapper: set_plot
 def set_plot(special_suffix=''):
+    """special_suffix is usually used for different plot styles, for example 'contour'.
+    """
     def decorate(drawing_func):
         @wraps(drawing_func)
         @attr.set_values(
@@ -62,7 +101,7 @@ def set_plot(special_suffix=''):
         def set_plot_core(x, y=None, z=None,
                           select=slice(None),
                           plt_args=None,
-                          title='',
+                          title=None,
                           filename=None, savedir='figures',
                           fig_ax=None,
                           cbar=True,
@@ -77,8 +116,9 @@ def set_plot(special_suffix=''):
             x, y=None, z=None: Columns or arrays.
             select=slice(None),
             plt_args=None,  # automatically set to dict(). No need to set manually in the wrapped function.
-            title='',  # title of the plot, the name of the selections by default.
-            filename=None,  # 'X-Y-Z-{special_suffix}, {title}.pdf' by default. If set to '', no file will be saved.
+            title=None,  # the name of the selections by default, no title if ''.
+                `title` is only used as title above the figure, not in the filename
+            filename=None,
             savedir='figures',
             fig_ax=None,  # if set, set as (fig, ax)
             cbar=True,
@@ -100,13 +140,6 @@ def set_plot(special_suffix=''):
             have_y = y is not None
             have_z = z is not None
 
-            name_list = []
-            name_list.append(attr.get_name(x, 'X'))
-            if have_y:
-                name_list.append(attr.get_name(y, 'Y'))
-            if have_z:
-                name_list.append(attr.get_name(z, 'Z'))
-
             if plt_args is None:
                 plt_args = dict()
 
@@ -120,10 +153,10 @@ def set_plot(special_suffix=''):
                 ax.set_ylabel(kwargs['y_label'])
 
             if have_y and proj == 'aitoff':
-                x = calc.to_radian(x, reset_zero=True)
-                y = calc.to_radian(y, reset_zero=True)
+                x = calc.deg_to_radian(x, reset_zero=True)
+                y = calc.deg_to_radian(y, reset_zero=True)
             if proj == 'polar':
-                x = calc.to_radian(x, reset_zero=True)
+                x = calc.deg_to_radian(x, reset_zero=True)
 
             # no reference here is set because select and x may have different dimensions.
             # In such case only the combined name is used.
@@ -150,8 +183,8 @@ def set_plot(special_suffix=''):
                 if have_y:
                     ax.set_ylim(kwargs.get('y_left'), kwargs.get('y_right'))
             elif have_y and proj == 'polar':
-                ax.set_thetalim(calc.to_radian(kwargs.get('x_left')),
-                                calc.to_radian(kwargs.get('x_right')))
+                ax.set_thetalim(calc.deg_to_radian(kwargs.get('x_left')),
+                                calc.deg_to_radian(kwargs.get('x_right')))
                 ax.set_rlim(kwargs.get('y_left'), kwargs.get('y_right'))
 
             already_has_cbar = fig.axes[-1].get_label() == '<colorbar>'
@@ -165,26 +198,16 @@ def set_plot(special_suffix=''):
             if have_y and kwargs['y_line'] is not None:
                 ax.axhline(kwargs['y_line'], linewidth=2, alpha=0.5, c='g')
 
-            if (title == '') and hasattr(select, 'name'):
+            if legend and len(ax.get_legend_handles_labels()[0]) > 0:
+                ax.legend(fontsize=legend)
+
+            if title is None and hasattr(select, 'name'):
                 title = select.name
             if title != '':
                 ax.set_title(title, fontfamily='sans-serif', fontsize=16)
 
-            if legend and len(ax.get_legend_handles_labels()[0]) > 0:
-                ax.legend(fontsize=legend)
-
-            if filename is None:
-                if special_suffix != '':
-                    name_list += [special_suffix]
-                filename = '-'.join(name_list)
-                if title != '':
-                    filename = f'{filename}, {title}'
-                filename = f'{filename}.pdf'
-
-            if not os.path.exists(savedir):
-                os.mkdir(savedir)
-            if filename != '':
-                fig.savefig(os.path.join(savedir, filename))
+            save_fig(fig=fig, x=x, y=y, z=z,
+                     savedir=savedir, special_suffix=special_suffix, select=select, filename=filename)
 
             fig.show()
             return fig, ax
@@ -227,10 +250,10 @@ def _contour(fig, ax, x_edges, y_edges, z, plt_args,
     z: 2-d binned map, or Column with data being the 2-d map.
 
     contour_levels:
-        if int, the number of levels;
-        if a float between 0 and 1, it is the percentile, and z is treated as normalized histogram;
-        if a list of float between 0 and 1, it is the list of percentiles, and z is treated as normalized histogram;
-        if a list of float not between 0 and 1, it is the list of levels of z.
+        if int, it is the number of levels;
+        if a float between 0 and 1, it is the percentile, and z is treated as normalized histogram. 15 levels is used;
+        if a list of floats all between 0 and 1, it is the list of percentiles, with z treated as normalized histogram;
+        if a list of floats not all between 0 and 1, it is the list of levels of z.
     """
     if plot_contourf:
         default_plt_args = {
@@ -397,6 +420,8 @@ def bin_map(x, y, z=None,
             contour_levels=15,
             step_follow_window=False,
             contour_args=None, img_args=None,
+            plot_contourf=False,
+            savedir='figures', filename=None,
             **kwargs):
     """
     Binning x and y to calculate some function of z.
@@ -416,7 +441,7 @@ def bin_map(x, y, z=None,
     x, y, [z]: Column or simply 1-d array of data.
     plot_contour=1,  # 0: no contour, 1: contour of z, 2: contour of histogram
     plot_img=1,  # 0: no img, 1: img of z, 2: img of histogram
-    contour_levels is passed to plot._contour.
+    contour_levels and plot_contourf is passed to plot._contour when plot_contour is set.
 
     In kwargs:
         everything of calc.bin_map, img and _contour
@@ -453,26 +478,30 @@ def bin_map(x, y, z=None,
             z_min_ = np.max([z_min_, kwargs.get('at_least', 0)])
             z_map_with_nan = attr.sift(z_map, min_=z_min_, inplace=False)
             fig, ax = img(x_edges, y_edges, z_map_with_nan,
-                          plt_args=img_args, select=select, **kwargs)
+                          filename='', plt_args=img_args, select=select, **kwargs)
             kwargs['fig_ax'] = (fig, ax)
         if plot_contour:
             z_map /= np.nansum(z_map)
             fig, ax = _contour(x_edges, y_edges, z_map, contour_levels=contour_levels,
-                               plt_args=contour_args, select=select,
+                               filename='', plt_args=contour_args, select=select, plot_contourf=plot_contourf,
                                **kwargs)
     else:
         z_map = attr.array2column(z_map, meta_from=z)
         if plot_img:
             fig, ax = img(x_edges, y_edges, z_map,
-                          plt_args=img_args, select=select, **kwargs)
+                          filename='', plt_args=img_args, select=select, **kwargs)
             kwargs['fig_ax'] = (fig, ax)
         if plot_contour == 1:
-            fig, ax = _contour(x_edges, y_edges, z_map, contour_levels=contour_levels,
-                               plt_args=contour_args, select=select, **kwargs)
+            fig, ax = _contour(x_edges, y_edges, z_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
+                               filename='', plt_args=contour_args, select=select, **kwargs)
         elif plot_contour == 2:
             hist_map, x_edges, y_edges = calc.bin_map(x, y, **kwargs)
-            fig, ax = _contour(x_edges, y_edges, hist_map, contour_levels=contour_levels,
-                               plt_args=contour_args, select=select, **kwargs)
+            fig, ax = _contour(x_edges, y_edges, hist_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
+                               filename='', plt_args=contour_args, select=select, **kwargs)
+
+    save_fig(fig=fig, x=x, y=y, z=z,
+             savedir=savedir, special_suffix='map', select=select, filename=filename)
+
     return fig, ax
 
 
@@ -483,6 +512,7 @@ def contour_scatter(x, y,
                     contour_levels=15,
                     plot_scatter=True,
                     plot_contourf=True,
+                    savedir='figures', filename=None,
                     **kwargs):
     """
     `plt.contour` is not good at dealing with sharp edges.
@@ -521,7 +551,11 @@ def contour_scatter(x, y,
         x_edges, y_edges, z_map,
         plt_args=contour_args, contour_levels=contour_levels, plot_contourf=plot_contourf,
         fig_ax=(fig, ax), cbar=False,
+        filename='',
         **kwargs)
+
+    save_fig(fig=fig, x=x, y=y,
+             savedir=savedir, special_suffix='cnt_sct', select=select, filename=filename)
 
     return fig, ax
 
@@ -536,10 +570,12 @@ def _bar(fig, ax, x, y, plt_args, y_log=False, **kwargs):
 
 
 def hist(x,
+         select=slice(None),
          y_log=False,
          plot_errorbar=True,
          bar_args=None,
          errorbar_args=None,
+         savedir='figures', filename=None,
          **kwargs):
     """
     kwargs: everything in calc.hist
@@ -548,7 +584,7 @@ def hist(x,
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in hist. Use errorbar_args and bar_args instead.')
 
-    h, h_err, x_center = calc.hist(x, **kwargs)
+    h, h_err, x_center = calc.hist(x, select=select, **kwargs)
 
     if y_log:
         kwargs['y_left'] = kwargs.get('y_left', 10.)
@@ -569,6 +605,7 @@ def hist(x,
 
     fig, ax = _bar(x_center, h,
                    plt_args=bar_args, y_log=y_log,
+                   filename='',
                    **kwargs)
 
     if plot_errorbar:
@@ -584,7 +621,11 @@ def hist(x,
         kwargs.pop('fig_ax', None)
         fig, ax = errorbar(x_center, h, y_err=h_err, fig_ax=(fig, ax),
                            plt_args=errorbar_args,
+                           filename='',
                            **kwargs)
+
+    save_fig(fig=fig, x=x,
+             savedir=savedir, special_suffix='hist', select=select, filename=filename)
 
     return fig, ax
 
@@ -610,8 +651,11 @@ def errorbar(fig, ax, x_centers, y_means, y_err=None,
 
 
 def bin_x(x, y=None, y_log=False, mode='mean',
+          select=slice(None),
+          at_least=1,
           plot_scatter=False, plot_errorbar=True, plot_fill=True,
           errorbar_args=None, scatter_args=None, fill_args=None,
+          savedir='figures', filename=None,
           **kwargs):
     """
     If errorbar is not set, plot the filled area.
@@ -622,7 +666,7 @@ def bin_x(x, y=None, y_log=False, mode='mean',
         raise ValueError('plt_args is not allowed in bin_x. '
                          'Use errorbar_args,fill_args and scatter_args instead.')
 
-    ys, y_err, x_centers = calc.bin_x(x, y, mode=mode, **kwargs)
+    ys, y_err, x_centers = calc.bin_x(x, y, mode=mode, select=select, at_least=at_least, **kwargs)
     ys = attr.array2column(ys, meta_from=y)
 
     x_centers = attr.array2column(x_centers, meta_from=x)
@@ -634,7 +678,7 @@ def bin_x(x, y=None, y_log=False, mode='mean',
     else:
         y_err_used = None
         errorbar_args.update({'markersize': 0})
-    fig, ax = errorbar(x_centers, ys, y_err=y_err_used, plt_args=errorbar_args, **kwargs)
+    fig, ax = errorbar(x_centers, ys, y_err=y_err_used, plt_args=errorbar_args, filename='', **kwargs)
 
     if not plot_errorbar and plot_fill:
         if fill_args is None:
@@ -652,7 +696,11 @@ def bin_x(x, y=None, y_log=False, mode='mean',
         scatter_args['c'] = 'silver'  # silver scatter in the background
         fig, ax = scatter(x, y, z=None, fig_ax=(fig, ax),
                           plt_args=scatter_args,
+                          filename='',
                           **kwargs)
+
+    save_fig(fig=fig, x=x,
+             savedir=savedir, special_suffix='bin_x', select=select, filename=filename)
 
     return fig, ax
 
