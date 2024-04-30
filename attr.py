@@ -76,6 +76,8 @@ def array2column(array: np.ndarray | Table,
 
 # %% table cleaning
 def clean_table(t: Table):
+    """fill table with np.nan if it is masked and float
+    """
     for name in t.colnames:
         col_is_float = np.issubdtype(t.dtype[name], np.floating)
         col_is_masked = isinstance(t[name], MaskedColumn)
@@ -107,11 +109,8 @@ def _status_of_list_of_selects(list_of_selects, reference=None):
     if reference is not None:
         list_of_selects_is_single = len(list_of_selects) == len(reference)
     else:
-        try:
-            iter(list_of_selects[0])
-            list_of_selects_is_single = False
-        except TypeError:
-            list_of_selects_is_single = True
+        list_of_selects_is_single = np.ndim(list_of_selects) <= 1
+
     if list_of_selects_is_single:
         return 1
 
@@ -263,9 +262,9 @@ def sift(original: np.ndarray | Column | MaskedColumn,
          doplot: bool = False,
          name: str = 'data'):
     """
-    Filter with respect to min and max, while keeping the original dimension.
+    Filter with respect to min and max, while keeping the original dimension. The equal values are kept.
 
-    The dropped items are replaced by np.nan. If the original array is int of bool, turn to float.
+    The dropped items are replaced by np.nan. If the original array is int or bool, turn to float.
 
     Can plot the histograms before and after the filtering if doplot is set to True.
 
@@ -399,6 +398,7 @@ def get_name(xyz, xyz_str, to_latex=False):
         return xyz
     if hasattr(xyz, 'name'):
         return xyz.name
+    # TODO: if bool, add 'fraction'
     else:
         if to_latex:
             return rf'${xyz_str.upper()}$'

@@ -105,6 +105,7 @@ def set_plot(special_suffix=''):
                           filename=None, savedir='figures',
                           fig_ax=None,
                           cbar=True,
+                          plot_bg=False,
                           proj=None,
                           legend=12,
                           **kwargs):
@@ -198,6 +199,9 @@ def set_plot(special_suffix=''):
             if have_y and kwargs['y_line'] is not None:
                 ax.axhline(kwargs['y_line'], linewidth=2, alpha=0.5, c='g')
 
+            if plot_bg:
+                ax.set_facecolor('silver')
+
             if legend and len(ax.get_legend_handles_labels()[0]) > 0:
                 ax.legend(fontsize=legend)
 
@@ -217,7 +221,7 @@ def set_plot(special_suffix=''):
 
 # %% func: img and contour
 @set_plot()
-def img(fig, ax, x_edges, y_edges, z, plt_args, plot_bg=False, **kwargs):
+def img(fig, ax, x_edges, y_edges, z, plt_args, **kwargs):
     """
     Parameters
     ----------
@@ -232,8 +236,6 @@ def img(fig, ax, x_edges, y_edges, z, plt_args, plot_bg=False, **kwargs):
                     vmin=kwargs['z_left'], vmax=kwargs['z_right'],
                     **plt_args)
     ax.grid()
-    if plot_bg:
-        ax.set_facecolor('silver')
     return img
 
 
@@ -274,11 +276,7 @@ def _contour(fig, ax, x_edges, y_edges, z, plt_args,
         default_plt_args.update(plt_args)
     plt_args = default_plt_args
 
-    try:
-        iter(contour_levels)
-        levels_is_list = True
-    except TypeError:
-        levels_is_list = False
+    levels_is_list = np.ndim(contour_levels) > 0
 
     if not levels_is_list and isinstance(contour_levels, int):
         assert contour_levels > 0, 'contour_levels should be a positive integer.'
@@ -416,6 +414,7 @@ def hexbin(fig, ax, x, y, z=None, select=slice(None),
 def bin_map(x, y, z=None,
             select=slice(None),
             plot_contour=1, plot_img=1,
+            at_least=1,
             z_log=False,
             contour_levels=15,
             step_follow_window=False,
@@ -454,10 +453,11 @@ def bin_map(x, y, z=None,
         raise ValueError('plt_args is not allowed in bin_map. Use img_args and contour_args instead.')
 
     select = attr.combine_selections(select, reference=x)
-    z_map, x_edges, y_edges = calc.bin_map(x, y, z, select=select,
+    z_map, x_edges, y_edges = calc.bin_map(x, y, z, select=select, at_least=at_least,
                                            step_follow_window=step_follow_window, **kwargs)
     if z_log:
         z_map = np.log10(z_map)
+        at_least = np.log10(at_least)
         kwargs.setdefault('cbar', False)
 
     if z is None and not step_follow_window:
@@ -473,18 +473,19 @@ def bin_map(x, y, z=None,
             attr.set(z_map, label='counts')
         else:
             attr.set(z_map, label='weighted counts')
+
+        z_map_with_nan = attr.sift(z_map, min_=at_least, inplace=False)
+
         if plot_img:
-            z_min_ = -int(z_log)  # -1 if z is in log scale, otherwise 0
-            z_min_ = np.max([z_min_, kwargs.get('at_least', 0)])
-            z_map_with_nan = attr.sift(z_map, min_=z_min_, inplace=False)
             fig, ax = img(x_edges, y_edges, z_map_with_nan,
                           filename='', plt_args=img_args, select=select, **kwargs)
             kwargs['fig_ax'] = (fig, ax)
+
         if plot_contour:
-            z_map /= np.nansum(z_map)
-            fig, ax = _contour(x_edges, y_edges, z_map, contour_levels=contour_levels,
-                               filename='', plt_args=contour_args, select=select, plot_contourf=plot_contourf,
-                               **kwargs)
+            z_map_with_nan = z_map_with_nan / calc.sum(z_map_with_nan)
+            fig, ax = _contour(
+                x_edges, y_edges, z_map_with_nan, contour_levels=contour_levels,
+                filename='', plt_args=contour_args, select=select, plot_contourf=plot_contourf, **kwargs)
     else:
         z_map = attr.array2column(z_map, meta_from=z)
         if plot_img:
@@ -524,6 +525,7 @@ def contour_scatter(x, y,
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in contour_scatter. Use scatter_args and contour_args instead.')
 
+    fig, ax = kwargs.pop('fig_ax', plt.subplots())
     if plot_scatter:
         default_scatter_args = dict(
             s=10,
@@ -535,15 +537,10 @@ def contour_scatter(x, y,
             default_scatter_args.update(scatter_args)
         scatter_args = default_scatter_args
 
-        fig, ax = scatter(x, y,
-                          plt_args=scatter_args, select=select,
-                          filename='',
-                          **kwargs)
-    else:
-        fig, ax = plt.subplots()
+        fig, ax = scatter(x, y, plt_args=scatter_args, select=select, fig_ax=(fig, ax), filename='', **kwargs)
 
     z_map, x_edges, y_edges = calc.bin_map(x, y, select=select, **kwargs)
-    z_map /= np.nansum(z_map)
+    z_map /= calc.sum(z_map)
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
 

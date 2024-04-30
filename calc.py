@@ -14,7 +14,7 @@ from scipy import stats
 from . import attr, misc
 
 
-# %% func: choose good values
+# %% func: select good values
 def select_good(array):
     # returns an array of bools indicating whether the values are not masked, not nan and not infinite.
     if hasattr(array, 'copy'):
@@ -31,50 +31,75 @@ def select_good(array):
     return ~mask
 
 
+def good_data_weights(data=None, weights=None):
+    if data is None:
+        assert weights is not None, "Both data and weights are None!"
+        np_data = np.ones_like(weights)
+        good_ind = np.ones_like(weights, dtype=bool)
+    else:
+        good_ind = select_good(data)
+        np_data = np.array(data)  # avoid changing the original array
+        if weights is None:
+            return np_data[good_ind], None
+
+    np_weights = np.array(weights)  # avoid changing the original array
+    np_data, np_weights = np_data.flatten(), np_weights.flatten()
+    assert np.shape(np_data) == np.shape(np_weights), \
+        'The shape of data and weights does not match!'
+
+    good_ind = good_ind & select_good(np_weights)
+    return np_data[good_ind], np_weights[good_ind]
+
+
+def weights_is_none(weights):
+    if weights is None:
+        return True
+    elif np.nansum(weights) == 0:
+        return True
+    elif not any(select_good(weights)):
+        return True
+    return False
+
+
 def good_values(array):
     good_ind = select_good(array)
     np_array = np.array(array)  # avoid changing the original array
     return np_array[good_ind]
 
 
-# %% func: min, max, mean, std and median
-def min(array):
-    return np.nanmin(good_values(array))
+# %% func: min, max, mean, sum, std
+def min(data):
+    return np.nanmin(good_values(data))
 
 
-def max(array):
-    return np.nanmax(good_values(array))
+def max(data):
+    return np.nanmax(good_values(data))
 
 
-def mean(array, weights=None):
-    good_ind = select_good(array)
-    np_array = np.array(array)  # avoid changing the original array
-    if weights is None or not any(select_good(weights)) or np.nansum(weights) == 0:
-        return np.average(np_array[good_ind])
-    good_ind = good_ind & select_good(weights)
-    np_weights = np.array(weights)  # avoid changing the original array
-    return np.average(np_array[good_ind], weights=np_weights[good_ind])
+def sum(data, weights=None):
+    np_data, np_weights = good_data_weights(data, weights)
+    if weights_is_none(np_weights):
+        return np.nansum(np_data)
+    return np.nansum(np_data * np_weights)
 
 
-def std(array, weights=None):
+def mean(data, weights=None):
+    np_data, np_weights = good_data_weights(data, weights)
+    if weights_is_none(np_weights):
+        return np.average(np_data)
+    return np.average(np_data, weights=np_weights)
+
+
+def std(data, weights=None):
     """ddof=1
     """
-    good_ind = select_good(array)
-    np_array = np.array(array)  # avoid changing the original array
-    if weights is None or not any(select_good(weights)) or np.nansum(weights) == 0:
-        return np.std(np_array[good_ind], ddof=1)
-    good_ind = good_ind & select_good(weights)
-    np_weights = np.array(weights)  # avoid changing the original array
-    np_array = np_array[good_ind]
-    np_weights = np_weights[good_ind]
-    average = mean(np_array, weights=np_weights)
-    variance = mean((np_array - average)**2, weights=np_weights)
-    N = len(np_array)
+    np_data, np_weights = good_data_weights(data, weights)
+    if weights_is_none(np_weights):
+        return np.std(np_data, ddof=1)
+    average = mean(np_data, weights=np_weights)
+    variance = mean((np_data - average)**2, weights=np_weights)
+    N = len(np_data)
     return np.sqrt(variance * N / (N - 1))
-
-
-def median(array, weights=None):
-    return weighted_percentile(array, weights=weights)
 
 
 # %% func: vmax_inv
@@ -272,7 +297,7 @@ def select_value_edges(data, edges, name=None, math=False):
     return select_list
 
 
-# %% func: weighted_median
+# %% func: weighted_percentile and median
 def weighted_percentile(data=None, weights=None,
                         select=slice(None), percentile=0.5):
     """in default calculate the weighted median.
@@ -306,15 +331,7 @@ def weighted_percentile(data=None, weights=None,
     else:
         weights = weights.copy()
 
-    # when weights is set, calculate the weighted percentiles
-    data, weights = np.array(data).flatten(), np.array(weights).flatten()
-    assert np.shape(data) == np.shape(weights), \
-        'The shape of data and weights does not match!'
-
-    # remove nan
-    # use_index = ~ (np.isnan(data) | np.isnan(weights))
-    use_index = select_good(data) & select_good(weights)
-    data, weights = data[use_index], weights[use_index]
+    data, weights = good_data_weights(data, weights)
 
     # when there is no available weights, return nan directly to save time.
     if not any(weights > 0):
@@ -348,6 +365,10 @@ def weighted_percentile(data=None, weights=None,
         if np.abs(cum_weights[indices - 1] - 0.5) < sys.float_info.epsilon:
             return np.mean(returned_data[indices - 1:indices + 1])
     return returned_data[indices]
+
+
+def median(data, weights=None):
+    return weighted_percentile(data, weights=weights)
 
 
 # %% func: select percentile
@@ -507,7 +528,7 @@ def bin_x(x, y, weights=None,
           at_least=1,
           **kwargs):
     """
-    `mode` could be 'mean' or 'median'. Overwritten by `func` and `errfunc`.
+    `mode` could be 'mean', 'meanerr' or 'median'. Overwritten by `func` and `errfunc`.
     When mode is 'median', median_percentile is used to calculate the errors.
     `func` and `errfunc` should be functions that take 1-d array (may with a `weights` array) and return a number.
     Returns
@@ -524,13 +545,16 @@ def bin_x(x, y, weights=None,
         x, x_left=x_left, x_right=x_right, bins=bins, x_step=x_step)
 
     if func is None:
-        if mode == 'mean':
+        if mode == 'mean' or mode == 'meanerr':
             func = mean
         elif mode == 'median':
             func = median
     if errfunc is None:
         if mode == 'mean':
             errfunc = std
+        elif mode == 'meanerr':
+            ...
+            errfunc = std  # TODO
         elif mode == 'median':
             from functools import partial
             errfunc = partial(weighted_percentile, percentile=np.sort(median_percentile))
@@ -651,11 +675,7 @@ def bin_map(x, y, z=None, weights=None, func=mean,
         # calc hist
         at_least = 0  # avoid nan in bin_map if calc hist
         z = np.ones_like(x)
-
-        def func(d, weights=None):
-            if weights is None:
-                return np.nansum(d)
-            return np.nansum(d * weights)
+        func = sum
 
     z = np.array(z)
 
@@ -712,10 +732,11 @@ def bin_map(x, y, z=None, weights=None, func=mean,
 def hist(x, weights=None,
          bins=100, x_step=None,
          x_left=None, x_right=None,
+         at_least=0,
          density=False, norm=False, select=slice(None), **kwargs):
     """
     density: scaled by the step length
-    norm: further scaling to make integrated area = 1
+    norm: further scaling to make integrated area = 1. Overwrites density.
     bins=100
     x_step=None, overwrite bins when set
     x_left=min(x), x_right=max(x)
@@ -735,27 +756,25 @@ def hist(x, weights=None,
             x, bins=bin_edges,
             range=(x_left,
                    x_right),
-            density=False
+            density=False  # density here is manually corrected in the following
         )
         hist_err = np.sqrt(hist)
     else:
         weights = weights[select]
 
-        hist = [value_in_bin(index_in_bin_i, weights=weights,
-                             func=lambda d, weights: np.nansum(d * weights))
+        hist = [value_in_bin(index_in_bin_i, weights=weights, at_least=at_least, func=sum)
                 for index_in_bin_i in index_in_bin]
-        hist_err = [value_in_bin(index_in_bin_i, weights=weights,
-                                 func=lambda d, weights:
-                                     np.sqrt(np.nansum(weights ** 2)))
+        hist_err = [value_in_bin(index_in_bin_i, weights=weights, at_least=at_least,
+                                 func=lambda d, weights: np.sqrt(sum(weights ** 2)))
                     for index_in_bin_i in index_in_bin]
 
     hist = np.array(hist)
     hist_err = np.array(hist_err)
     scale = 1.
     if density:
-        scale /= x_step
+        scale = 1. / x_step
     if norm:
-        scale /= np.nansum(hist)
+        scale = 1. / np.nansum(hist)
     hist = hist * scale
     hist_err = hist_err * scale
 

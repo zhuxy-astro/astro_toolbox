@@ -55,17 +55,12 @@ def select_id(table, value, name=['plate', 'mjd', 'fiber']):
         is_single_name = True
         name = name[0]
     if is_single_name:
-        # check if value is iterable
-        try:
-            iter(value)  # check if iterable
-            # multiple value
-            select_result = np.zeros(len(table), dtype=bool)
-            for value_j in value:
-                select_result |= (table[name] == value_j)
-            return select_result
-        except TypeError:
+        if np.ndim(value) == 0:
             # single value
             return table[name] == value
+        else:
+            # multiple values
+            return np.isin(table[name], value)
 
     # multiple name
     if len(value) == len(name):
