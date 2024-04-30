@@ -103,7 +103,7 @@ def set_plot(special_suffix=''):
                           plt_args=None,
                           title=None,
                           filename=None, savedir='figures',
-                          fig_ax=None,
+                          ax=None,
                           cbar=True,
                           plot_bg=False,
                           proj=None,
@@ -121,7 +121,7 @@ def set_plot(special_suffix=''):
                 `title` is only used as title above the figure, not in the filename
             filename=None,
             savedir='figures',
-            fig_ax=None,  # if set, set as (fig, ax)
+            ax=None,  # if set, set as ax
             cbar=True,
             proj=None,  # could be 'aitoff' or 'polar'
             legend=12,  # 0: no legend, >0: legend fontsize
@@ -133,10 +133,10 @@ def set_plot(special_suffix=''):
 
             Returns
             -------
-            fig, ax
+            ax
 
             The wraped function:
-                func(fig, ax, x, [y, z,] [plt_args=dict(),] **kwargs)
+                func(ax, x, [y, z,] [plt_args=dict(),] **kwargs)
             """
             have_y = y is not None
             have_z = z is not None
@@ -144,10 +144,10 @@ def set_plot(special_suffix=''):
             if plt_args is None:
                 plt_args = dict()
 
-            if fig_ax is None:
+            if ax is None:
                 fig, ax = plt.subplots(subplot_kw={'projection': proj})
             else:
-                fig, ax = fig_ax
+                fig = ax.figure
 
             ax.set_xlabel(kwargs['x_label'])
             if have_y:
@@ -172,7 +172,7 @@ def set_plot(special_suffix=''):
                     x_y_z += [y]
                 if have_z:
                     x_y_z += [z]
-                img = drawing_func(fig, ax,
+                img = drawing_func(ax,
                                    *x_y_z,
                                    select=select,
                                    plt_args=plt_args,
@@ -214,14 +214,14 @@ def set_plot(special_suffix=''):
                      savedir=savedir, special_suffix=special_suffix, select=select, filename=filename)
 
             fig.show()
-            return fig, ax
+            return ax
         return set_plot_core
     return decorate
 
 
 # %% func: img and contour
 @set_plot()
-def img(fig, ax, x_edges, y_edges, z, plt_args, **kwargs):
+def img(ax, x_edges, y_edges, z, plt_args, **kwargs):
     """
     Parameters
     ----------
@@ -240,7 +240,7 @@ def img(fig, ax, x_edges, y_edges, z, plt_args, **kwargs):
 
 
 @set_plot()
-def _contour(fig, ax, x_edges, y_edges, z, plt_args,
+def _contour(ax, x_edges, y_edges, z, plt_args,
              plot_contourf=False,
              contour_levels=15,
              **kwargs):
@@ -319,7 +319,7 @@ def _contour(fig, ax, x_edges, y_edges, z, plt_args,
 
 # %% func: plot scatter
 @set_plot(special_suffix='scatter')
-def scatter(fig, ax,
+def scatter(ax,
             x, y, z=None, select=slice(None),
             plot_border=False,
             plt_args=None,
@@ -373,7 +373,7 @@ def scatter(fig, ax,
 
 # %% func: hexbin
 @set_plot(special_suffix='hexbin')
-def hexbin(fig, ax, x, y, z=None, select=slice(None),
+def hexbin(ax, x, y, z=None, select=slice(None),
            weights=None, func=calc.mean,
            bins=100,
            at_least=1, z_log=False,
@@ -447,7 +447,7 @@ def bin_map(x, y, z=None,
 
     Returns
     -------
-    fig, ax
+    ax
     """
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in bin_map. Use img_args and contour_args instead.')
@@ -477,33 +477,33 @@ def bin_map(x, y, z=None,
         z_map_with_nan = attr.sift(z_map, min_=at_least, inplace=False)
 
         if plot_img:
-            fig, ax = img(x_edges, y_edges, z_map_with_nan,
-                          filename='', plt_args=img_args, select=select, **kwargs)
-            kwargs['fig_ax'] = (fig, ax)
+            ax = img(x_edges, y_edges, z_map_with_nan,
+                     filename='', plt_args=img_args, select=select, **kwargs)
+            kwargs['ax'] = ax
 
         if plot_contour:
             z_map_with_nan = z_map_with_nan / calc.sum(z_map_with_nan)
-            fig, ax = _contour(
+            ax = _contour(
                 x_edges, y_edges, z_map_with_nan, contour_levels=contour_levels,
                 filename='', plt_args=contour_args, select=select, plot_contourf=plot_contourf, **kwargs)
     else:
         z_map = attr.array2column(z_map, meta_from=z)
         if plot_img:
-            fig, ax = img(x_edges, y_edges, z_map,
-                          filename='', plt_args=img_args, select=select, **kwargs)
-            kwargs['fig_ax'] = (fig, ax)
+            ax = img(x_edges, y_edges, z_map,
+                     filename='', plt_args=img_args, select=select, **kwargs)
+            kwargs['ax'] = ax
         if plot_contour == 1:
-            fig, ax = _contour(x_edges, y_edges, z_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
-                               filename='', plt_args=contour_args, select=select, **kwargs)
+            ax = _contour(x_edges, y_edges, z_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
+                          filename='', plt_args=contour_args, select=select, **kwargs)
         elif plot_contour == 2:
             hist_map, x_edges, y_edges = calc.bin_map(x, y, **kwargs)
-            fig, ax = _contour(x_edges, y_edges, hist_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
-                               filename='', plt_args=contour_args, select=select, **kwargs)
+            ax = _contour(x_edges, y_edges, hist_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
+                          filename='', plt_args=contour_args, select=select, **kwargs)
 
-    save_fig(fig=fig, x=x, y=y, z=z,
+    save_fig(fig=ax.figure, x=x, y=y, z=z,
              savedir=savedir, special_suffix='map', select=select, filename=filename)
 
-    return fig, ax
+    return ax
 
 
 # %% func: contour_scatter
@@ -525,7 +525,7 @@ def contour_scatter(x, y,
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in contour_scatter. Use scatter_args and contour_args instead.')
 
-    fig, ax = kwargs.pop('fig_ax', plt.subplots())
+    ax = kwargs.pop('ax', plt.subplots())
     if plot_scatter:
         default_scatter_args = dict(
             s=10,
@@ -537,29 +537,29 @@ def contour_scatter(x, y,
             default_scatter_args.update(scatter_args)
         scatter_args = default_scatter_args
 
-        fig, ax = scatter(x, y, plt_args=scatter_args, select=select, fig_ax=(fig, ax), filename='', **kwargs)
+        ax = scatter(x, y, plt_args=scatter_args, select=select, ax=ax, filename='', **kwargs)
 
     z_map, x_edges, y_edges = calc.bin_map(x, y, select=select, **kwargs)
     z_map /= calc.sum(z_map)
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
 
-    fig, ax = _contour(
+    ax = _contour(
         x_edges, y_edges, z_map,
         plt_args=contour_args, contour_levels=contour_levels, plot_contourf=plot_contourf,
-        fig_ax=(fig, ax), cbar=False,
+        ax=ax, cbar=False,
         filename='',
         **kwargs)
 
-    save_fig(fig=fig, x=x, y=y,
+    save_fig(fig=ax.figure, x=x, y=y,
              savedir=savedir, special_suffix='cnt_sct', select=select, filename=filename)
 
-    return fig, ax
+    return ax
 
 
 # %% func: plot 1d hist
 @set_plot()
-def _bar(fig, ax, x, y, plt_args, y_log=False, **kwargs):
+def _bar(ax, x, y, plt_args, y_log=False, **kwargs):
     if y_log:
         ax.set_yscale('log')
     img = ax.bar(x, y, width=x[1] - x[0], **plt_args)
@@ -600,7 +600,7 @@ def hist(x,
     x_center = attr.array2column(x_center, meta_from=x)
     h = attr.array2column(h, name='hist')
 
-    fig, ax = _bar(x_center, h,
+    ax = _bar(x_center, h,
                    plt_args=bar_args, y_log=y_log,
                    filename='',
                    **kwargs)
@@ -615,21 +615,21 @@ def hist(x,
         if errorbar_args is not None:
             default_errorbar_args.update(errorbar_args)
         errorbar_args = default_errorbar_args
-        kwargs.pop('fig_ax', None)
-        fig, ax = errorbar(x_center, h, y_err=h_err, fig_ax=(fig, ax),
-                           plt_args=errorbar_args,
-                           filename='',
-                           **kwargs)
+        kwargs.pop('ax', None)
+        ax = errorbar(x_center, h, y_err=h_err, ax=ax,
+                      plt_args=errorbar_args,
+                      filename='',
+                      **kwargs)
 
-    save_fig(fig=fig, x=x,
+    save_fig(fig=ax.figure, x=x,
              savedir=savedir, special_suffix='hist', select=select, filename=filename)
 
-    return fig, ax
+    return ax
 
 
 # %% func: plot mean with std
 @set_plot()
-def errorbar(fig, ax, x_centers, y_means, y_err=None,
+def errorbar(ax, x_centers, y_means, y_err=None,
              plt_args=None, **kwargs):
     """
     This is to plot mean with std, not for individual points.
@@ -675,7 +675,7 @@ def bin_x(x, y=None, y_log=False, mode='mean',
     else:
         y_err_used = None
         errorbar_args.update({'markersize': 0})
-    fig, ax = errorbar(x_centers, ys, y_err=y_err_used, plt_args=errorbar_args, filename='', **kwargs)
+    ax = errorbar(x_centers, ys, y_err=y_err_used, plt_args=errorbar_args, filename='', **kwargs)
 
     if not plot_errorbar and plot_fill:
         if fill_args is None:
@@ -685,26 +685,26 @@ def bin_x(x, y=None, y_log=False, mode='mean',
             ax.fill_between(x_centers, ys - y_err[0], ys + y_err[1], **fill_args)
         else:
             ax.fill_between(x_centers, ys - y_err, ys + y_err, **fill_args)
-    kwargs.pop('fig_ax', None)
+    kwargs.pop('ax', None)
 
     if y is not None and plot_scatter:
         if scatter_args is None:
             scatter_args = dict()
         scatter_args['c'] = 'silver'  # silver scatter in the background
-        fig, ax = scatter(x, y, z=None, fig_ax=(fig, ax),
-                          plt_args=scatter_args,
-                          filename='',
-                          **kwargs)
+        ax = scatter(x, y, z=None, ax=ax,
+                     plt_args=scatter_args,
+                     filename='',
+                     **kwargs)
 
-    save_fig(fig=fig, x=x,
+    save_fig(fig=ax.figure, x=x,
              savedir=savedir, special_suffix='bin_x', select=select, filename=filename)
 
-    return fig, ax
+    return ax
 
 
 # %% func: loess2d
 @set_plot(special_suffix='loess')
-def loess(fig, ax, x, y, z, plt_args=None, plot_border=True,
+def loess(ax, x, y, z, plt_args=None, plot_border=True,
           select=slice(None),
           **kwargs):
     select = attr.combine_selections(select, reference=x)
