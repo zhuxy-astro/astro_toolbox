@@ -90,16 +90,50 @@ def mean(data, weights=None):
     return np.average(np_data, weights=np_weights)
 
 
-def std(data, weights=None):
-    """ddof=1
-    """
+def std(data, weights=None, ddof=1):
     np_data, np_weights = good_data_weights(data, weights)
     if weights_is_none(np_weights):
-        return np.std(np_data, ddof=1)
+        return np.std(np_data, ddof=ddof)
     average = mean(np_data, weights=np_weights)
     variance = mean((np_data - average)**2, weights=np_weights)
+    if ddof == 0:
+        return np.sqrt(variance)
     N = len(np_data)
     return np.sqrt(variance * N / (N - 1))
+
+
+def meanerr(data, weights=None):
+    """
+    Calculate the error in mean.  When the data is boolean, estimate the error of the fraction.
+
+    When dealing with the error of the fraction, the error is calculated as sqrt(p*(1-p)/N), where p is the fraction.
+    Here we assume that the error of the numerator `sum(data)`, which is binomial, dominates the error, and the Poisson
+    error in the denominator `len(data)` is not considered. Note that the denominator in error calculation is not N-1,
+    equivalent to ddof=0 in the std function. This recovers the std (ddof=1) results from bootstraping most closely.
+    Setting ddof=1 here overestimates the error of the fraction, though more consistent with the std function.
+    """
+    np_data, np_weights = good_data_weights(data, weights)
+    # ddof = 0 if the data is boolean and the fraction is calculated, otherwise 1.
+    ddof = 1 - np.issubdtype(data.dtype, bool)
+
+    if weights_is_none(np_weights):
+        return np.std(np_data, ddof=ddof) / np.sqrt(len(np_data))
+
+    # with weights
+    sigma = std(np_data, weights=np_weights, ddof=ddof)
+    return sigma * np.sqrt(sum(np_weights**2)) / sum(np_weights)
+
+
+def fraction_err(x, y, x_err=None, y_err=None):
+    """calculate the error of the fraction x/y
+    If x_err and y_err are not set, Poisson error is used.
+    Note that the poisson error used here does not meet the bootstrap experiments.
+    """
+    if x_err is None:
+        x_err = np.sqrt(x)
+    if y_err is None:
+        y_err = np.sqrt(y)
+    return x / y * np.hypot(x_err / x, y_err / y)
 
 
 # %% func: vmax_inv
@@ -434,7 +468,7 @@ def binning(x, bins=50, x_step=None,
 def value_in_bin(index_in_bin=None, data=None, weights=None,
                  at_least=1, func=mean, bar=lambda: None, bootstrap=0):
     """bootstrap: 0: no bootstrap; 1: mean of the bootstrap;
-        2: std of the bootstrap; 3: confidence interval; 4: return the res object.
+    2: std of the bootstrap (ddof=1 by default); 3: confidence interval; 4: return the res object.
     """
     if index_in_bin is None:
         index_in_bin = slice(None)
@@ -524,13 +558,14 @@ def bin_x(x, y, weights=None,
           bins=20, x_step=None,
           x_left=None, x_right=None,
           select=slice(None),
-          bootstrap=False,
+          bootstrap=0,
           at_least=1,
           **kwargs):
     """
     `mode` could be 'mean', 'meanerr' or 'median'. Overwritten by `func` and `errfunc`.
     When mode is 'median', median_percentile is used to calculate the errors.
     `func` and `errfunc` should be functions that take 1-d array (may with a `weights` array) and return a number.
+    bootstrap: 0: no bootstrap; 1: mean and confidence interval; 2: mean and std.
     Returns
     -------
     ys, y_err, x_centers
@@ -553,8 +588,7 @@ def bin_x(x, y, weights=None,
         if mode == 'mean':
             errfunc = std
         elif mode == 'meanerr':
-            ...
-            errfunc = std  # TODO
+            errfunc = meanerr
         elif mode == 'median':
             from functools import partial
             errfunc = partial(weighted_percentile, percentile=np.sort(median_percentile))
@@ -569,7 +603,10 @@ def bin_x(x, y, weights=None,
             ress = [value_in_bin(ind, y, bar=bar, **value_in_bin_kwargs) for ind in index_in_bin]
 
         ys = [np.nanmean(res.bootstrap_distribution) for res in ress]
-        y_err = [res.confidence_interval for res in ress]
+        if bootstrap == 1:
+            y_err = [res.confidence_interval for res in ress]
+        elif bootstrap == 2:
+            y_err = [res.standard_error for res in ress]
 
     else:
         value_in_bin_kwargs['bootstrap'] = 0
@@ -577,7 +614,7 @@ def bin_x(x, y, weights=None,
         value_in_bin_kwargs['func'] = errfunc
         y_err = [value_in_bin(ind, y, **value_in_bin_kwargs) for ind in index_in_bin]
 
-    if mode == 'median' or bootstrap:
+    if mode == 'median' or bootstrap == 1:
         y_err = np.array(y_err).T
         y_err = np.abs(y_err - ys)
 

@@ -647,7 +647,8 @@ def errorbar(ax, x_centers, y_means, y_err=None,
     return img
 
 
-def bin_x(x, y=None, y_log=False, mode='mean',
+def bin_x(x, y=None, y_log=False,
+          mode='mean', bootstrap=0,
           select=slice(None),
           at_least=1,
           plot_scatter=False, plot_errorbar=True, plot_fill=True,
@@ -663,7 +664,7 @@ def bin_x(x, y=None, y_log=False, mode='mean',
         raise ValueError('plt_args is not allowed in bin_x. '
                          'Use errorbar_args,fill_args and scatter_args instead.')
 
-    ys, y_err, x_centers = calc.bin_x(x, y, mode=mode, select=select, at_least=at_least, **kwargs)
+    ys, y_err, x_centers = calc.bin_x(x, y, mode=mode, select=select, at_least=at_least, bootstrap=bootstrap, **kwargs)
     ys = attr.array2column(ys, meta_from=y)
 
     x_centers = attr.array2column(x_centers, meta_from=x)
@@ -681,7 +682,7 @@ def bin_x(x, y=None, y_log=False, mode='mean',
         if fill_args is None:
             fill_args = dict()
         fill_args.setdefault('alpha', 0.2)
-        if mode == 'median' or kwargs.get('bootstrap', False):
+        if mode == 'median' or bootstrap == 1:
             ax.fill_between(x_centers, ys - y_err[0], ys + y_err[1], **fill_args)
         else:
             ax.fill_between(x_centers, ys - y_err, ys + y_err, **fill_args)
