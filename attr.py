@@ -398,7 +398,6 @@ def get_name(xyz, xyz_str, to_latex=False):
         return xyz
     if hasattr(xyz, 'name'):
         return xyz.name
-    # TODO: if bool, add 'fraction'
     else:
         if to_latex:
             return rf'${xyz_str.upper()}$'

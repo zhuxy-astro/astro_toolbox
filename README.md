@@ -9,8 +9,13 @@ I don't create a new class, because:
 
 Reload of the class DataSeries will disrupt the type check already loaded.
 
+`name` is used in column name, file naming, title of selection, and the default axis label, and should be non-mathematical string.
+`label` is used only in axis labels, and can be mathematical.
+
 ## plot
 Using too much `kwargs` will make the program less readable.
+
+`plt_args` passed to the plotting function always have higher priority than the default values or the variables set in my own function.
 
 For functions of "outer" level which has @set_plot decorated function inside:
     - `select` should not be set at the beginning of the function, but should be set in the inner function,

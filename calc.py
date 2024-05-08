@@ -301,33 +301,36 @@ def fraction(select, within=slice(None), weights=None, print_info=False):
 
 
 # %% func: select_value_edges
-def select_value_edges(data, edges, name=None, math=False):
+def select_value_edges(data, edges, name=None, label=None):
     """return the list of select arrays cut by the edges, with length = len(edges) + 1
     """
     if name is None:
-        try:
+        if hasattr(data, 'name'):
             name = data.name
-        except AttributeError:
+        else:
             name = 'x'
-    if math:
-        le = r'\leq'
-    else:
-        le = '<='
+    if label is None:
+        if hasattr(data, 'meta'):
+            label = data.meta.get('label', None)
+    if label is None:  # still None
+        label = name
+
+    le_math = r'\leq'
+    le = '<='
     select_list = []
     select_list.append(attr.array2column(
-        data <= edges[0], name=f'{name}{le}{edges[0]:.3g}'))
+        data <= edges[0],
+        name=f'{name}{le}{edges[0]:.3g}',
+        label=rf'${label} {le_math} {edges[0]:.3g}$'))
     for i in range(len(edges) - 1):
-        select_name = f'{edges[i]:.3g}<{name}{le}{edges[i + 1]:.3g}'
-        if math:
-            select_name = r'$' + select_name + r'$'
         select_list.append(attr.array2column(
             (data > edges[i]) & (data <= edges[i + 1]),
-            name=select_name))
-    name = f'{name}>{edges[-1]:.3g}'
-    if math:
-        select_name = r'$' + name + r'$'
+            name=f'{edges[i]:.3g}<{name}{le}{edges[i + 1]:.3g}',
+            label=fr'${edges[i]:.3g}<{label} {le_math} {edges[i + 1]:.3g}$'))
     select_list.append(attr.array2column(
-        data > edges[-1], name=select_name))
+        data > edges[-1],
+        name=f'{name}>{edges[-1]:.3g}',
+        label=rf'${label} > {edges[-1]:.3g}$'))
     return select_list
 
 

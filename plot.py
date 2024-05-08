@@ -97,8 +97,8 @@ def set_plot(special_suffix=''):
             set_default=True,
             to_set=['x_label', 'x_left', 'x_right', 'x_line',
                     'y_label', 'y_left', 'y_right', 'y_line',
-                    'z_label', 'z_left', 'z_right', 'z_line'])
-        def set_plot_core(x, y=None, z=None,
+                    'z_label', 'z_left', 'z_right', 'z_line', 'z_cmap'])
+        def set_plot_core(x, y=None, z=None, *,
                           select=slice(None),
                           plt_args=None,
                           title=None,
@@ -129,7 +129,7 @@ def set_plot(special_suffix=''):
             In kwargs:
                 'x_label', 'x_left', 'x_right', 'x_line',
                 'y_label', 'y_left', 'y_right', 'y_line',
-                'z_label', 'z_left', 'z_right', 'z_line'
+                'z_label', 'z_left', 'z_right', 'z_line', 'z_cmap'
 
             Returns
             -------
@@ -228,13 +228,23 @@ def img(ax, x_edges, y_edges, z, plt_args, **kwargs):
     x_edges, y_edges: Arrays of edges, NOT the centers. The dim of edges should be len(z) + 1.
     z: 2-d binned map, or Column with data being the 2-d map.
     """
-    plt_args.setdefault('cmap', 'RdBu')
-    img = ax.imshow(z,
-                    extent=(x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]),
-                    aspect='auto',
-                    origin='lower',
-                    vmin=kwargs['z_left'], vmax=kwargs['z_right'],
-                    **plt_args)
+    # kwargs['z_cmap'] is set to None by default, so that methods like `setdefault` or `kwargs.get` don't work.
+    if kwargs.get('z_cmap') is None:
+        kwargs['z_cmap'] = 'coolwarm'
+
+    default_plt_args = dict(
+        extent=(x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]),
+        aspect='auto',
+        origin='lower',
+        vmin=kwargs['z_left'], vmax=kwargs['z_right'],
+        cmap=kwargs['z_cmap'],
+    )
+
+    if plt_args is not None:
+        default_plt_args.update(plt_args)
+    plt_args = default_plt_args
+
+    img = ax.imshow(z, **plt_args)
     ax.grid()
     return img
 
@@ -257,25 +267,32 @@ def _contour(ax, x_edges, y_edges, z, plt_args,
         if a list of floats all between 0 and 1, it is the list of percentiles, with z treated as normalized histogram;
         if a list of floats not all between 0 and 1, it is the list of levels of z.
     """
-    if plot_contourf:
-        default_plt_args = {
-            'cmap': 'coolwarm',
-        }
+    if kwargs.get('z_cmap') is None:
+        cmap = 'coolwarm'
     else:
-        default_plt_args = {
-            'colors': 'k',
-            'linewidths': 0.5,
-            'linestyles': 'solid'
-        }
-    # cmap and colors shouldn't be set at the same time
-    # use colors by default, unless cmap is set
-        if plt_args.get('cmap') is None:
-            plt_args.setdefault('colors', default_plt_args.pop('colors'))
-    # else plt_args has cmap
+        cmap = kwargs['z_cmap']
+
+    if plot_contourf:
+        default_plt_args = dict(
+            cmap=cmap,
+        )
+    else:
+        default_plt_args = dict(
+            colors='k',
+            linewidths=0.5,
+            linestyles='solid',
+        )
+
     if plt_args is not None:
         default_plt_args.update(plt_args)
     plt_args = default_plt_args
 
+    # cmap and colors shouldn't be set at the same time
+    # set colors only when cmap is not set
+    if plt_args.get('cmap') is not None and plt_args.get('colors') is not None:
+        plt_args.pop('colors')
+
+    # handle contour_levels
     levels_is_list = np.ndim(contour_levels) > 0
 
     if not levels_is_list and isinstance(contour_levels, int):
@@ -300,18 +317,17 @@ def _contour(ax, x_edges, y_edges, z, plt_args,
 
     else:
         raise ValueError('contour_levels should be an int, a float between 0 and 1, or a list.')
+    plt_args['levels'] = levels
 
     x_centers = (x_edges[1:] + x_edges[:-1]) / 2
     y_centers = (y_edges[1:] + y_edges[:-1]) / 2
 
     if plot_contourf:
         img = ax.contourf(x_centers, y_centers, z,
-                          levels=levels,
                           **plt_args,
                           )
     else:
         img = ax.contour(x_centers, y_centers, z,
-                         levels=levels,
                          **plt_args,
                          )
     return img
@@ -333,7 +349,6 @@ def scatter(ax,
         marker='o',
         s=10,  # marker size
         rasterized=True,
-        cmap='RdBu'
     )
     if plt_args is not None:
         default_plt_args.update(plt_args)
@@ -349,21 +364,22 @@ def scatter(ax,
                    **border_args
                    )
 
+    add_default_args = dict(lw=0)
     if z is not None:
-        c = z[select]
-        vmin = kwargs['z_left']
-        vmax = kwargs['z_right']
-    else:
-        c = plt_args.pop('c', None)
-        vmin = None
-        vmax = None
-        plt_args['cmap'] = None
+        if kwargs.get('z_cmap') is not None:
+            cmap = kwargs['z_cmap']
+        else:
+            cmap = 'coolwarm'
+        add_default_args.update(dict(
+            c=z[select],
+            vmin=kwargs['z_left'],
+            vmax=kwargs['z_right'],
+            cmap=cmap,
+        ))
+    add_default_args.update(plt_args)
+    plt_args = add_default_args
 
-    plt_args.setdefault('lw', 0)
     img = ax.scatter(x[select], y[select],
-                     c=c,  # c is z, or None, or set manually
-                     vmin=vmin, vmax=vmax,
-                     # edgecolors='None'
                      **plt_args
                      )
     ax.grid()
@@ -398,20 +414,31 @@ def hexbin(ax, x, y, z=None, select=slice(None),
             func = partial(calc.value_in_bin, func=func, data=z, weights=weights)
             z = np.arange(len(z))
 
-    plt_args.setdefault('extent',
-                        (kwargs.get('x_left'), kwargs.get('x_right'), kwargs.get('y_left'), kwargs.get('y_right')))
-    if z_log:
-        plt_args.setdefault('bins', 'log')
+    if kwargs.get('z_cmap') is None:
+        cmap = 'coolwarm'
+    else:
+        cmap = kwargs['z_cmap']
 
-    img = ax.hexbin(x, y, C=z,
-                    reduce_C_function=func,
-                    gridsize=bins, mincnt=at_least,
-                    **plt_args)
+    default_plt_args = dict(
+        C=z,
+        extent=(kwargs.get('x_left'), kwargs.get('x_right'), kwargs.get('y_left'), kwargs.get('y_right')),
+        reduce_C_function=func,
+        gridsize=bins, mincnt=at_least,
+        cmap=cmap,
+    )
+    if z_log:
+        default_plt_args['bins'] = 'log'
+
+    if plt_args is not None:
+        default_plt_args.update(plt_args)
+    plt_args = default_plt_args
+
+    img = ax.hexbin(x, y, **plt_args)
     return img
 
 
 # %% func: bin_map
-def bin_map(x, y, z=None,
+def bin_map(x, y, z=None, *,
             select=slice(None),
             plot_contour=1, plot_img=1,
             at_least=1,
@@ -507,7 +534,7 @@ def bin_map(x, y, z=None,
 
 
 # %% func: contour_scatter
-def contour_scatter(x, y,
+def contour_scatter(x, y, *,
                     select=slice(None),
                     contour_args=None, scatter_args=None,
                     contour_levels=15,
@@ -525,7 +552,7 @@ def contour_scatter(x, y,
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in contour_scatter. Use scatter_args and contour_args instead.')
 
-    ax = kwargs.pop('ax', plt.subplots())
+    ax = kwargs.pop('ax', plt.subplots()[1])
     if plot_scatter:
         default_scatter_args = dict(
             s=10,
@@ -566,7 +593,7 @@ def _bar(ax, x, y, plt_args, y_log=False, **kwargs):
     return img
 
 
-def hist(x,
+def hist(x, *,
          select=slice(None),
          y_log=False,
          plot_errorbar=True,
@@ -601,9 +628,9 @@ def hist(x,
     h = attr.array2column(h, name='hist')
 
     ax = _bar(x_center, h,
-                   plt_args=bar_args, y_log=y_log,
-                   filename='',
-                   **kwargs)
+              plt_args=bar_args, y_log=y_log,
+              filename='',
+              **kwargs)
 
     if plot_errorbar:
         default_errorbar_args = dict(
@@ -647,7 +674,7 @@ def errorbar(ax, x_centers, y_means, y_err=None,
     return img
 
 
-def bin_x(x, y=None, y_log=False,
+def bin_x(x, y=None, *, y_log=False,
           mode='mean', bootstrap=0,
           select=slice(None),
           at_least=1,
@@ -727,7 +754,6 @@ def loess(ax, x, y, z, plt_args=None, plot_border=True,
     default_plt_args = dict(
         s=80,
         rasterized=True,
-        cmap='RdBu',
     )
     if plt_args is not None:
         default_plt_args.update(plt_args)
@@ -746,5 +772,18 @@ def loess(ax, x, y, z, plt_args=None, plot_border=True,
         # border_args.setdefault('lw', border_args['s'] / 20)
         ax.scatter(x_use, y_use, **border_args)
 
-    img = ax.scatter(x_use, y_use, c=zout, lw=0, **plt_args)
+    if kwargs.get('z_cmap') is not None:
+        cmap = kwargs['z_cmap']
+    else:
+        cmap = 'coolwarm'
+
+    add_default_args = dict(lw=0)
+    add_default_args.update(dict(
+        c=zout,
+        cmap=cmap,
+    ))
+    add_default_args.update(plt_args)
+    plt_args = add_default_args
+
+    img = ax.scatter(x_use, y_use, **plt_args)
     return img
