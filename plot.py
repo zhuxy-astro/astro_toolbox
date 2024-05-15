@@ -13,8 +13,7 @@ import matplotlib.pyplot as plt
 # from astropy.table import Table
 # import astro_toolbox.calc as calc
 
-from . import attr
-from . import calc
+from . import attr, calc
 
 # %% settings
 # settings here will directly affect the file importing this module.
@@ -47,11 +46,20 @@ matplotlib.rc('figure.subplot', bottom=0.125, left=0.2)  # to avoid labels being
 matplotlib.rc('axes', labelpad=1.)  # make the labels closer to the axis, by default 4.0
 matplotlib.rc('savefig', format='pdf', dpi=300, directory='~/Downloads')
 
+default_cmap = 'coolwarm'
 
-# %% func: save_fig
-def save_fig(fig, x, y=None, z=None, savedir='figures', special_suffix='', select=[], filename=None):
+
+# %% func: set_title_save_fig
+def set_title_save_fig(ax, x, y=None, z=None, savedir='figures',
+                       special_suffix='', select=[],
+                       filename=None, title=None,
+                       ):
     """
     save file as 'figures/X-Y-Z-{special_suffix}, {title}.pdf' by default.
+
+    title = None: use the name of the selections by default, no title if ''.
+        only used as title above the figure, not in the filename
+
     If filename is set to '', no file will be saved.
     Used by plotting functions not decorated by set_plot.
     Requirement for the definition of funcs using this func:
@@ -81,10 +89,16 @@ def save_fig(fig, x, y=None, z=None, savedir='figures', special_suffix='', selec
 
     filename = f'{filename}.pdf'
 
+    if title is None and select_name != '':
+        title = select_name
+    # if title != '':
+    # set title even it is empty
+    ax.set_title(title, fontfamily='sans-serif', fontsize=16)
+
     if not os.path.exists(savedir):
         os.mkdir(savedir)
 
-    fig.savefig(os.path.join(savedir, filename))
+    ax.figure.savefig(os.path.join(savedir, filename))
 
 
 # %% wrapper: set_plot
@@ -104,7 +118,7 @@ def set_plot(special_suffix=''):
                           title=None,
                           filename=None, savedir='figures',
                           ax=None,
-                          cbar=True,
+                          plot_cbar=True,
                           plot_bg=False,
                           proj=None,
                           legend=12,
@@ -117,12 +131,11 @@ def set_plot(special_suffix=''):
             x, y=None, z=None: Columns or arrays.
             select=slice(None),
             plt_args=None,  # automatically set to dict(). No need to set manually in the wrapped function.
-            title=None,  # the name of the selections by default, no title if ''.
-                `title` is only used as title above the figure, not in the filename
+            title=None,
             filename=None,
             savedir='figures',
             ax=None,  # if set, set as ax
-            cbar=True,
+            plot_cbar=True,
             proj=None,  # could be 'aitoff' or 'polar'
             legend=12,  # 0: no legend, >0: legend fontsize
 
@@ -189,7 +202,7 @@ def set_plot(special_suffix=''):
                 ax.set_rlim(kwargs.get('y_left'), kwargs.get('y_right'))
 
             already_has_cbar = fig.axes[-1].get_label() == '<colorbar>'
-            if have_z and cbar and not already_has_cbar:
+            if have_z and plot_cbar and not already_has_cbar:
                 cbar = fig.colorbar(img)
                 img.set_clim(kwargs['z_left'], kwargs['z_right'])
                 cbar.set_label(kwargs['z_label'])
@@ -205,13 +218,9 @@ def set_plot(special_suffix=''):
             if legend and len(ax.get_legend_handles_labels()[0]) > 0:
                 ax.legend(fontsize=legend)
 
-            if title is None and hasattr(select, 'name'):
-                title = select.name
-            if title != '':
-                ax.set_title(title, fontfamily='sans-serif', fontsize=16)
-
-            save_fig(fig=fig, x=x, y=y, z=z,
-                     savedir=savedir, special_suffix=special_suffix, select=select, filename=filename)
+            set_title_save_fig(ax=ax, x=x, y=y, z=z, title=title,
+                               savedir=savedir, special_suffix=special_suffix,
+                               select=select, filename=filename)
 
             fig.show()
             return ax
@@ -230,7 +239,7 @@ def img(ax, x_edges, y_edges, z, plt_args, **kwargs):
     """
     # kwargs['z_cmap'] is set to None by default, so that methods like `setdefault` or `kwargs.get` don't work.
     if kwargs.get('z_cmap') is None:
-        kwargs['z_cmap'] = 'coolwarm'
+        kwargs['z_cmap'] = default_cmap
 
     default_plt_args = dict(
         extent=(x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]),
@@ -249,49 +258,14 @@ def img(ax, x_edges, y_edges, z, plt_args, **kwargs):
     return img
 
 
-@set_plot()
-def _contour(ax, x_edges, y_edges, z, plt_args,
-             plot_contourf=False,
-             contour_levels=15,
-             **kwargs):
+def _calc_contour_levels(z, contour_levels, **kwargs):
     """
-    Plot contour or contourf of the 2-d map, based on whether plot_contourf is set.
-    Parameters
-    ----------
-    x_edges, y_edges: Arrays of edges, NOT the centers. The dim of edges should be len(z) + 1.
-    z: 2-d binned map, or Column with data being the 2-d map.
-
     contour_levels:
         if int, it is the number of levels;
         if a float between 0 and 1, it is the percentile, and z is treated as normalized histogram. 15 levels is used;
         if a list of floats all between 0 and 1, it is the list of percentiles, with z treated as normalized histogram;
         if a list of floats not all between 0 and 1, it is the list of levels of z.
     """
-    if kwargs.get('z_cmap') is None:
-        cmap = 'coolwarm'
-    else:
-        cmap = kwargs['z_cmap']
-
-    if plot_contourf:
-        default_plt_args = dict(
-            cmap=cmap,
-        )
-    else:
-        default_plt_args = dict(
-            colors='k',
-            linewidths=0.5,
-            linestyles='solid',
-        )
-
-    if plt_args is not None:
-        default_plt_args.update(plt_args)
-    plt_args = default_plt_args
-
-    # cmap and colors shouldn't be set at the same time
-    # set colors only when cmap is not set
-    if plt_args.get('cmap') is not None and plt_args.get('colors') is not None:
-        plt_args.pop('colors')
-
     # handle contour_levels
     levels_is_list = np.ndim(contour_levels) > 0
 
@@ -317,6 +291,54 @@ def _contour(ax, x_edges, y_edges, z, plt_args,
 
     else:
         raise ValueError('contour_levels should be an int, a float between 0 and 1, or a list.')
+
+    return levels
+
+
+@set_plot()
+def _contour(ax, x_edges, y_edges, z, plt_args,
+             plot_contourf=False,
+             contour_levels=15,
+             labels=None,
+             clabel_args=None,
+             **kwargs):
+    """
+    Plot contour or contourf of the 2-d map, based on whether plot_contourf is set.
+
+    Parameters
+    ----------
+    x_edges, y_edges: Arrays of edges, NOT the centers. The dim of edges should be len(z) + 1.
+    z: 2-d binned map, or Column with data being the 2-d map.
+    labels: None, str, or list of str. If None, no labels. If str, all labels are the same.
+        If list, each level has a label except for the None values. This can be used to select levels to label,
+        although using `manual` in `clabel_args` is more flexible.
+    """
+    if kwargs.get('z_cmap') is None:
+        cmap = default_cmap
+    else:
+        cmap = kwargs['z_cmap']
+
+    if plot_contourf:
+        default_plt_args = dict(
+            cmap=cmap,
+        )
+    else:
+        default_plt_args = dict(
+            colors='k',
+            linewidths=0.8,
+            linestyles='solid',
+        )
+
+    if plt_args is not None:
+        default_plt_args.update(plt_args)
+    plt_args = default_plt_args
+
+    # cmap and colors shouldn't be set at the same time
+    # set colors only when cmap is not set
+    if plt_args.get('cmap') is not None and plt_args.get('colors') is not None:
+        plt_args.pop('colors')
+
+    levels = _calc_contour_levels(z, contour_levels, **kwargs)
     plt_args['levels'] = levels
 
     x_centers = (x_edges[1:] + x_edges[:-1]) / 2
@@ -330,6 +352,31 @@ def _contour(ax, x_edges, y_edges, z, plt_args,
         img = ax.contour(x_centers, y_centers, z,
                          **plt_args,
                          )
+
+    if labels is not None:
+        if not isinstance(labels, str) and len(labels) == len(img.levels) - 1:
+            fmt = {}
+            select_levels = []
+            for level, string in zip(img.levels, labels):
+                if string is not None:
+                    select_levels.append(level)
+                    fmt[level] = string
+        else:
+            fmt = labels
+            select_levels = img.levels
+
+        default_clabel_args = dict(
+            inline=True,
+            fontsize=10,
+            fmt=fmt,
+            levels=select_levels,
+        )
+        if clabel_args is not None:
+            default_clabel_args.update(clabel_args)
+        clabel_args = default_clabel_args
+
+        ax.clabel(img, **clabel_args)
+
     return img
 
 
@@ -369,7 +416,7 @@ def scatter(ax,
         if kwargs.get('z_cmap') is not None:
             cmap = kwargs['z_cmap']
         else:
-            cmap = 'coolwarm'
+            cmap = default_cmap
         add_default_args.update(dict(
             c=z[select],
             vmin=kwargs['z_left'],
@@ -415,7 +462,7 @@ def hexbin(ax, x, y, z=None, select=slice(None),
             z = np.arange(len(z))
 
     if kwargs.get('z_cmap') is None:
-        cmap = 'coolwarm'
+        cmap = default_cmap
     else:
         cmap = kwargs['z_cmap']
 
@@ -439,7 +486,7 @@ def hexbin(ax, x, y, z=None, select=slice(None),
 
 # %% func: bin_map
 def bin_map(x, y, z=None, *,
-            select=slice(None),
+            select=slice(None), title=None,
             plot_contour=1, plot_img=1,
             at_least=1,
             z_log=False,
@@ -461,6 +508,8 @@ def bin_map(x, y, z=None, *,
     this is exactly what is done here.
     The window size controls both the smoothness in the high density regions and the marker size in outliers,
     while steps controls the resolution in high density regions, and if the outliers are grid-like.
+
+    Currently there is no way to add contour lines to the cbar of imshow.
 
     Parameters
     ----------
@@ -485,11 +534,11 @@ def bin_map(x, y, z=None, *,
     if z_log:
         z_map = np.log10(z_map)
         at_least = np.log10(at_least)
-        kwargs.setdefault('cbar', False)
+        kwargs.setdefault('plot_cbar', False)
 
     if z is None and not step_follow_window:
         # calc histogram, but not the real number in each window
-        kwargs.setdefault('cbar', False)
+        kwargs.setdefault('plot_cbar', False)
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
     # edges is left here not converted into centers because this is done in scatter and img.
@@ -527,18 +576,19 @@ def bin_map(x, y, z=None, *,
             ax = _contour(x_edges, y_edges, hist_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
                           filename='', plt_args=contour_args, select=select, **kwargs)
 
-    save_fig(fig=ax.figure, x=x, y=y, z=z,
-             savedir=savedir, special_suffix='map', select=select, filename=filename)
+    set_title_save_fig(ax=ax, x=x, y=y, z=z, title=title,
+                       savedir=savedir, special_suffix='map', select=select, filename=filename)
 
     return ax
 
 
 # %% func: contour_scatter
 def contour_scatter(x, y, *,
-                    select=slice(None),
+                    select=slice(None), title=None,
                     contour_args=None, scatter_args=None,
                     contour_levels=15,
                     plot_scatter=True,
+                    plot_contour=True,
                     plot_contourf=True,
                     savedir='figures', filename=None,
                     **kwargs):
@@ -553,6 +603,12 @@ def contour_scatter(x, y, *,
         raise ValueError('plt_args is not allowed in contour_scatter. Use scatter_args and contour_args instead.')
 
     ax = kwargs.pop('ax', plt.subplots()[1])
+
+    z_map, x_edges, y_edges = calc.bin_map(x, y, select=select, **kwargs)
+    z_map /= calc.sum(z_map)
+    x_edges = attr.array2column(x_edges, meta_from=x)
+    y_edges = attr.array2column(y_edges, meta_from=y)
+
     if plot_scatter:
         default_scatter_args = dict(
             s=10,
@@ -564,22 +620,29 @@ def contour_scatter(x, y, *,
             default_scatter_args.update(scatter_args)
         scatter_args = default_scatter_args
 
-        ax = scatter(x, y, plt_args=scatter_args, select=select, ax=ax, filename='', **kwargs)
+        from contourpy import contour_generator
+        from matplotlib import path
+        cont_gen = contour_generator(z=z_map, x=(x_edges[1:] + x_edges[:-1]) / 2, y=(y_edges[1:] + y_edges[:-1]) / 2)
+        levels_min = np.min(_calc_contour_levels(z_map, contour_levels, **kwargs))
+        lines = cont_gen.lines(levels_min)
+        p = path.Path(lines[0])
+        select_outside = ~p.contains_points(np.column_stack([x, y]))
 
-    z_map, x_edges, y_edges = calc.bin_map(x, y, select=select, **kwargs)
-    z_map /= calc.sum(z_map)
-    x_edges = attr.array2column(x_edges, meta_from=x)
-    y_edges = attr.array2column(y_edges, meta_from=y)
+        if select != slice(None):
+            select_outside &= attr.combine_selections(select)
 
-    ax = _contour(
-        x_edges, y_edges, z_map,
-        plt_args=contour_args, contour_levels=contour_levels, plot_contourf=plot_contourf,
-        ax=ax, cbar=False,
-        filename='',
-        **kwargs)
+        ax = scatter(x, y, plt_args=scatter_args, select=select_outside, ax=ax, filename='', **kwargs)
 
-    save_fig(fig=ax.figure, x=x, y=y,
-             savedir=savedir, special_suffix='cnt_sct', select=select, filename=filename)
+    if plot_contour:
+        ax = _contour(
+            x_edges, y_edges, z_map,
+            plt_args=contour_args, contour_levels=contour_levels, plot_contourf=plot_contourf,
+            ax=ax, plot_cbar=False,
+            filename='',
+            **kwargs)
+
+    set_title_save_fig(ax=ax, x=x, y=y, title=title,
+                       savedir=savedir, special_suffix='cnt_sct', select=select, filename=filename)
 
     return ax
 
@@ -589,12 +652,13 @@ def contour_scatter(x, y, *,
 def _bar(ax, x, y, plt_args, y_log=False, **kwargs):
     if y_log:
         ax.set_yscale('log')
-    img = ax.bar(x, y, width=x[1] - x[0], **plt_args)
+    plt_args.setdefault('width', x[1] - x[0])
+    img = ax.bar(x, y, **plt_args)
     return img
 
 
 def hist(x, *,
-         select=slice(None),
+         select=slice(None), title=None,
          y_log=False,
          plot_errorbar=True,
          bar_args=None,
@@ -648,8 +712,8 @@ def hist(x, *,
                       filename='',
                       **kwargs)
 
-    save_fig(fig=ax.figure, x=x,
-             savedir=savedir, special_suffix='hist', select=select, filename=filename)
+    set_title_save_fig(ax=ax, x=x, title=title,
+                       savedir=savedir, special_suffix='hist', select=select, filename=filename)
 
     return ax
 
@@ -676,7 +740,7 @@ def errorbar(ax, x_centers, y_means, y_err=None,
 
 def bin_x(x, y=None, *, y_log=False,
           mode='mean', bootstrap=0,
-          select=slice(None),
+          select=slice(None), title=None,
           at_least=1,
           plot_scatter=False, plot_errorbar=True, plot_fill=True,
           errorbar_args=None, scatter_args=None, fill_args=None,
@@ -703,7 +767,9 @@ def bin_x(x, y=None, *, y_log=False,
     else:
         y_err_used = None
         errorbar_args.update({'markersize': 0})
-    ax = errorbar(x_centers, ys, y_err=y_err_used, plt_args=errorbar_args, filename='', **kwargs)
+    # `select` is still passed in order to show the title, but not used in the calculation
+    ax = errorbar(x_centers, ys, y_err=y_err_used,
+                  plt_args=errorbar_args, filename='', **kwargs)
 
     if not plot_errorbar and plot_fill:
         if fill_args is None:
@@ -721,11 +787,12 @@ def bin_x(x, y=None, *, y_log=False,
         scatter_args['c'] = 'silver'  # silver scatter in the background
         ax = scatter(x, y, z=None, ax=ax,
                      plt_args=scatter_args,
+                     select=select,
                      filename='',
                      **kwargs)
 
-    save_fig(fig=ax.figure, x=x,
-             savedir=savedir, special_suffix='bin_x', select=select, filename=filename)
+    set_title_save_fig(ax=ax, x=x, title=title,
+                       savedir=savedir, special_suffix='bin_x', select=select, filename=filename)
 
     return ax
 
@@ -775,7 +842,7 @@ def loess(ax, x, y, z, plt_args=None, plot_border=True,
     if kwargs.get('z_cmap') is not None:
         cmap = kwargs['z_cmap']
     else:
-        cmap = 'coolwarm'
+        cmap = default_cmap
 
     add_default_args = dict(lw=0)
     add_default_args.update(dict(

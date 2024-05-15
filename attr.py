@@ -150,7 +150,7 @@ def combine_selections(list_of_selects, reference=None):
 
     Returns
     -------
-    select_result : an bool array with the combined name in attr
+    select_result : an bool array with the combined name
     """
     list_status = _status_of_list_of_selects(list_of_selects, reference)
 

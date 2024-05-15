@@ -106,15 +106,16 @@ def meanerr(data, weights=None):
     """
     Calculate the error in mean.  When the data is boolean, estimate the error of the fraction.
 
+    When calculating the error of the mean, the error is calculated as std/sqrt(N), where std has ddof=1 by default.
+
     When dealing with the error of the fraction, the error is calculated as sqrt(p*(1-p)/N), where p is the fraction.
-    Here we assume that the error of the numerator `sum(data)`, which is binomial, dominates the error, and the Poisson
-    error in the denominator `len(data)` is not considered. Note that the denominator in error calculation is not N-1,
-    equivalent to ddof=0 in the std function. This recovers the std (ddof=1) results from bootstraping most closely.
+    This recovers the std (ddof=1) results from bootstraping most closely.
     Setting ddof=1 here overestimates the error of the fraction, though more consistent with the std function.
     """
     np_data, np_weights = good_data_weights(data, weights)
     # ddof = 0 if the data is boolean and the fraction is calculated, otherwise 1.
     ddof = 1 - np.issubdtype(data.dtype, bool)
+    # ddof = 0
 
     if weights_is_none(np_weights):
         return np.std(np_data, ddof=ddof) / np.sqrt(len(np_data))
@@ -300,9 +301,10 @@ def fraction(select, within=slice(None), weights=None, print_info=False):
     return numerator / denominator
 
 
-# %% func: select_value_edges
-def select_value_edges(data, edges, name=None, label=None):
-    """return the list of select arrays cut by the edges, with length = len(edges) + 1
+# %% func: select_range and select_value_edges
+def select_range(data, left=None, right=None,
+                 name=None, label=None):
+    """return a select array cut by one edge or two edges
     """
     if name is None:
         if hasattr(data, 'name'):
@@ -315,22 +317,45 @@ def select_value_edges(data, edges, name=None, label=None):
     if label is None:  # still None
         label = name
 
-    le_math = r'\leq'
     le = '<='
+    le_math = r'\leq'
+
+    if left is None:
+        if right is None:
+            raise ValueError('At least one of left and right should be set.')
+
+        return attr.array2column(
+            data <= right,
+            name=f'{name}{le}{right:.3g}',
+            label=rf'${label} {le_math} {right:.3g}$')
+
+    if right is None:
+        return attr.array2column(
+            data > left,
+            name=f'{name}>{left:.3g}',
+            label=rf'${label} > {left:.3g}$')
+
+    return attr.array2column(
+        (data > left) & (data <= right),
+        name=f'{left:.3g}<{name}{le}{right:.3g}',
+        label=rf'${left:.3g} < {label} {le_math} {right:.3g}$')
+
+
+def select_value_edges(data, edges, name=None, label=None):
+    """return the list of select arrays cut by the edges, with length = len(edges) + 1
+    """
     select_list = []
-    select_list.append(attr.array2column(
-        data <= edges[0],
-        name=f'{name}{le}{edges[0]:.3g}',
-        label=rf'${label} {le_math} {edges[0]:.3g}$'))
+
+    select_list.append(select_range(
+        data, right=edges[0], name=name, label=label))
+
     for i in range(len(edges) - 1):
-        select_list.append(attr.array2column(
-            (data > edges[i]) & (data <= edges[i + 1]),
-            name=f'{edges[i]:.3g}<{name}{le}{edges[i + 1]:.3g}',
-            label=fr'${edges[i]:.3g}<{label} {le_math} {edges[i + 1]:.3g}$'))
-    select_list.append(attr.array2column(
-        data > edges[-1],
-        name=f'{name}>{edges[-1]:.3g}',
-        label=rf'${label} > {edges[-1]:.3g}$'))
+        select_list.append(select_range(
+            data, left=edges[i], right=edges[i + 1], name=name, label=label))
+
+    select_list.append(select_range(
+        data, left=edges[-1], name=name, label=label))
+
     return select_list
 
 
@@ -486,7 +511,7 @@ def value_in_bin(index_in_bin=None, data=None, weights=None,
         select = select & (weights_in_bin != 0.)
 
     bootstrap_args = dict(
-        n_resamples=500,
+        # n_resamples=5000,
         # vectorized=False,
         paired=True,
         confidence_level=0.68,
