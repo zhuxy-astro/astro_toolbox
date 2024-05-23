@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 # from astropy.table import Table
 # import astro_toolbox.calc as calc
 
-from . import attr, calc
+from . import attr, calc, sel
 
 # %% settings
 # settings here will directly affect the file importing this module.
@@ -48,14 +48,18 @@ matplotlib.rc('savefig', format='pdf', dpi=300, directory='~/Downloads')
 
 default_cmap = 'coolwarm'
 
+default_savedir = 'figures'
+
 
 # %% func: set_title_save_fig
-def set_title_save_fig(ax, x, y=None, z=None, savedir='figures',
+def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
                        special_suffix='', select=[],
                        filename=None, title=None,
                        ):
     """
     save file as 'figures/X-Y-Z-{special_suffix}, {title}.pdf' by default.
+
+    x, y, z: Columns or str.
 
     title = None: use the name of the selections by default, no title if ''.
         only used as title above the figure, not in the filename
@@ -63,7 +67,7 @@ def set_title_save_fig(ax, x, y=None, z=None, savedir='figures',
     If filename is set to '', no file will be saved.
     Used by plotting functions not decorated by set_plot.
     Requirement for the definition of funcs using this func:
-        select=slice(None), savedir='figures', filename=None
+        select=slice(None), savedir=default_savedir, filename=None
 
     special_suffix is usually used for different plot styles, for example 'contour'.
     """
@@ -82,7 +86,7 @@ def set_title_save_fig(ax, x, y=None, z=None, savedir='figures',
             name_list += [special_suffix]
         filename = '-'.join(name_list)
 
-        select_name = attr.combine_selection_names(select)
+        select_name = sel.combine_names(select)
         if select_name != '':
             filename = f'{filename}, {select_name}'
     # else, use the overwritten filename
@@ -116,7 +120,7 @@ def set_plot(special_suffix=''):
                           select=slice(None),
                           plt_args=None,
                           title=None,
-                          filename=None, savedir='figures',
+                          filename=None, savedir=default_savedir,
                           ax=None,
                           plot_cbar=True,
                           plot_bg=False,
@@ -133,7 +137,7 @@ def set_plot(special_suffix=''):
             plt_args=None,  # automatically set to dict(). No need to set manually in the wrapped function.
             title=None,
             filename=None,
-            savedir='figures',
+            savedir=default_savedir,
             ax=None,  # if set, set as ax
             plot_cbar=True,
             proj=None,  # could be 'aitoff' or 'polar'
@@ -174,7 +178,7 @@ def set_plot(special_suffix=''):
 
             # no reference here is set because select and x may have different dimensions.
             # In such case only the combined name is used.
-            select = attr.combine_selections(select)  # , reference=x)
+            select = sel.combine(select)  # , reference=x)
 
             # avoid warnings (mostly UserWarning: The following kwargs were not used by func: ...)
             with warnings.catch_warnings():
@@ -301,6 +305,7 @@ def _contour(ax, x_edges, y_edges, z, plt_args,
              contour_levels=15,
              labels=None,
              clabel_args=None,
+             plot_contour_cbar=True,
              **kwargs):
     """
     Plot contour or contourf of the 2-d map, based on whether plot_contourf is set.
@@ -377,6 +382,25 @@ def _contour(ax, x_edges, y_edges, z, plt_args,
 
         ax.clabel(img, **clabel_args)
 
+    if plot_contour_cbar:
+        already_has_cbar = ax.figure.axes[-1].get_label() == '<colorbar>'
+        if already_has_cbar:
+            cbar_ax = ax.figure.axes[-1]
+            plt_colors = plt_args.get('colors')
+            if isinstance(plt_colors, str):
+                plt_colors = np.repeat(plt_colors, len(img.levels))
+            lws = plt_args.get('linewidths')
+            if isinstance(lws, (int, float)):
+                lws = np.repeat(lws, len(img.levels))
+            lss = plt_args.get('linestyles')
+            if isinstance(lss, str):
+                lss = np.repeat(lss, len(img.levels))
+            for level, color, lw, ls in zip(img.levels, plt_colors, lws, lss):
+                cbar_ax.axhline(level, color=color, linewidth=lw, linestyle=ls)
+        else:
+            cbar = plt.colorbar(img)
+            cbar.set_label(kwargs['z_label'])
+
     return img
 
 
@@ -444,7 +468,7 @@ def hexbin(ax, x, y, z=None, select=slice(None),
     """bins could be a number or a list of two numbers.
     """
 
-    select = attr.combine_selections(select, reference=x)
+    select = sel.combine(select, reference=x)
     x = x[select]
     y = y[select]
     if z is not None:
@@ -494,7 +518,7 @@ def bin_map(x, y, z=None, *,
             step_follow_window=False,
             contour_args=None, img_args=None,
             plot_contourf=False,
-            savedir='figures', filename=None,
+            savedir=default_savedir, filename=None,
             **kwargs):
     """
     Binning x and y to calculate some function of z.
@@ -528,17 +552,19 @@ def bin_map(x, y, z=None, *,
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in bin_map. Use img_args and contour_args instead.')
 
-    select = attr.combine_selections(select, reference=x)
+    select = sel.combine(select, reference=x)
     z_map, x_edges, y_edges = calc.bin_map(x, y, z, select=select, at_least=at_least,
                                            step_follow_window=step_follow_window, **kwargs)
     if z_log:
         z_map = np.log10(z_map)
         at_least = np.log10(at_least)
         kwargs.setdefault('plot_cbar', False)
+        kwargs.setdefault('plot_contour_cbar', False)
 
     if z is None and not step_follow_window:
         # calc histogram, but not the real number in each window
         kwargs.setdefault('plot_cbar', False)
+        kwargs.setdefault('plot_contour_cbar', False)
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
     # edges is left here not converted into centers because this is done in scatter and img.
@@ -583,6 +609,11 @@ def bin_map(x, y, z=None, *,
 
 
 # %% func: contour_scatter
+# to solve the problem of z_left and z_right in calculating the contour levels
+@attr.set_values(
+    set_default=True,
+    to_set=['z_left', 'z_right'],
+)
 def contour_scatter(x, y, *,
                     select=slice(None), title=None,
                     contour_args=None, scatter_args=None,
@@ -590,7 +621,7 @@ def contour_scatter(x, y, *,
                     plot_scatter=True,
                     plot_contour=True,
                     plot_contourf=True,
-                    savedir='figures', filename=None,
+                    savedir=default_savedir, filename=None,
                     **kwargs):
     """
     `plt.contour` is not good at dealing with sharp edges.
@@ -629,7 +660,7 @@ def contour_scatter(x, y, *,
         select_outside = ~p.contains_points(np.column_stack([x, y]))
 
         if select != slice(None):
-            select_outside &= attr.combine_selections(select)
+            select_outside &= sel.combine(select)
 
         ax = scatter(x, y, plt_args=scatter_args, select=select_outside, ax=ax, filename='', **kwargs)
 
@@ -637,7 +668,7 @@ def contour_scatter(x, y, *,
         ax = _contour(
             x_edges, y_edges, z_map,
             plt_args=contour_args, contour_levels=contour_levels, plot_contourf=plot_contourf,
-            ax=ax, plot_cbar=False,
+            ax=ax, plot_cbar=False, plot_contour_cbar=False,
             filename='',
             **kwargs)
 
@@ -663,7 +694,7 @@ def hist(x, *,
          plot_errorbar=True,
          bar_args=None,
          errorbar_args=None,
-         savedir='figures', filename=None,
+         savedir=default_savedir, filename=None,
          **kwargs):
     """
     kwargs: everything in calc.hist
@@ -744,7 +775,7 @@ def bin_x(x, y=None, *, y_log=False,
           at_least=1,
           plot_scatter=False, plot_errorbar=True, plot_fill=True,
           errorbar_args=None, scatter_args=None, fill_args=None,
-          savedir='figures', filename=None,
+          savedir=default_savedir, filename=None,
           **kwargs):
     """
     If errorbar is not set, plot the filled area.
@@ -791,7 +822,7 @@ def bin_x(x, y=None, *, y_log=False,
                      filename='',
                      **kwargs)
 
-    set_title_save_fig(ax=ax, x=x, title=title,
+    set_title_save_fig(ax=ax, x=x, y=y, title=title,
                        savedir=savedir, special_suffix='bin_x', select=select, filename=filename)
 
     return ax
@@ -802,9 +833,9 @@ def bin_x(x, y=None, *, y_log=False,
 def loess(ax, x, y, z, plt_args=None, plot_border=True,
           select=slice(None),
           **kwargs):
-    select = attr.combine_selections(select, reference=x)
+    select = sel.combine(select, reference=x)
     for i in [x, y, z]:
-        select &= calc.select_good(i)
+        select &= sel.good(i)
     x_use = x[select]
     y_use = y[select]
     z_use = z[select]

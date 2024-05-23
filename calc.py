@@ -11,33 +11,17 @@ from scipy.spatial import KDTree
 from scipy.optimize import curve_fit as scipy_curve_fit
 from scipy import stats
 
-from . import attr, misc
+from . import attr, misc, sel
 
 
 # %% func: select good values
-def select_good(array):
-    # returns an array of bools indicating whether the values are not masked, not nan and not infinite.
-    if hasattr(array, 'copy'):
-        # I don't know why but this function will change the original array without copying.
-        array = array.copy()
-
-    if hasattr(array, 'mask'):
-        mask = array.mask
-    else:
-        mask = None
-    if mask is None:
-        mask = np.zeros_like(array, dtype=bool)
-    mask |= ~np.isfinite(array)
-    return ~mask
-
-
 def good_data_weights(data=None, weights=None):
     if data is None:
         assert weights is not None, "Both data and weights are None!"
         np_data = np.ones_like(weights)
         good_ind = np.ones_like(weights, dtype=bool)
     else:
-        good_ind = select_good(data)
+        good_ind = sel.good(data)
         np_data = np.array(data)  # avoid changing the original array
         if weights is None:
             return np_data[good_ind], None
@@ -47,7 +31,7 @@ def good_data_weights(data=None, weights=None):
     assert np.shape(np_data) == np.shape(np_weights), \
         'The shape of data and weights does not match!'
 
-    good_ind = good_ind & select_good(np_weights)
+    good_ind = good_ind & sel.good(np_weights)
     return np_data[good_ind], np_weights[good_ind]
 
 
@@ -56,13 +40,13 @@ def weights_is_none(weights):
         return True
     elif np.nansum(weights) == 0:
         return True
-    elif not any(select_good(weights)):
+    elif not any(sel.good(weights)):
         return True
     return False
 
 
 def good_values(array):
-    good_ind = select_good(array)
+    good_ind = sel.good(array)
     np_array = np.array(array)  # avoid changing the original array
     return np_array[good_ind]
 
@@ -169,7 +153,7 @@ def vmax_inv(z_left, z_right, z_min, z_max,
     Vmax = _V(np.maximum(z_left, z_min), np.minimum(z_right, z_max))
     if fill_nan:
         # nan values of z_min and z_max
-        select_bad_zmin_zmax = (~select_good(z_min)) | (~select_good(z_max))
+        select_bad_zmin_zmax = (~sel.good(z_min)) | (~sel.good(z_max))
         if z is not None:
             # wrong values of z_min and z_max
             select_bad_zmin_zmax |= (z > z_max) | (z < z_min)
@@ -275,7 +259,7 @@ def schechter_log(logx, amp, logx_c, alpha):
 
 # %% func: curve_fit
 def curve_fit(f, xdata, ydata, *args, **kwargs):
-    select_good_xy = select_good(xdata) & select_good(ydata)
+    select_good_xy = sel.good(xdata) & sel.good(ydata)
     return scipy_curve_fit(f, xdata[select_good_xy], ydata[select_good_xy], *args, **kwargs)
 
 
@@ -284,10 +268,10 @@ def fraction(select, within=slice(None), weights=None, print_info=False):
     """In simple calculating the fraction without `within` and just `weights`, the function is equivalent to `mean`.
     """
     # combine `within` when it is a list, and save `within` from slice(None)
-    within = attr.combine_selections(within, reference=select)
+    within = sel.combine(within, reference=select)
     within = np.array(within, dtype=bool)
     select = np.array(select, dtype=bool)
-    within = within & select_good(select)
+    within = within & sel.good(select)
 
     if weights is None:
         denominator = np.nansum(within)
@@ -299,64 +283,6 @@ def fraction(select, within=slice(None), weights=None, print_info=False):
     if print_info:
         print(f'{numerator} / {denominator}')
     return numerator / denominator
-
-
-# %% func: select_range and select_value_edges
-def select_range(data, left=None, right=None,
-                 name=None, label=None):
-    """return a select array cut by one edge or two edges
-    """
-    if name is None:
-        if hasattr(data, 'name'):
-            name = data.name
-        else:
-            name = 'x'
-    if label is None:
-        if hasattr(data, 'meta'):
-            label = data.meta.get('label', None)
-    if label is None:  # still None
-        label = name
-
-    le = '<='
-    le_math = r'\leq'
-
-    if left is None:
-        if right is None:
-            raise ValueError('At least one of left and right should be set.')
-
-        return attr.array2column(
-            data <= right,
-            name=f'{name}{le}{right:.3g}',
-            label=rf'${label} {le_math} {right:.3g}$')
-
-    if right is None:
-        return attr.array2column(
-            data > left,
-            name=f'{name}>{left:.3g}',
-            label=rf'${label} > {left:.3g}$')
-
-    return attr.array2column(
-        (data > left) & (data <= right),
-        name=f'{left:.3g}<{name}{le}{right:.3g}',
-        label=rf'${left:.3g} < {label} {le_math} {right:.3g}$')
-
-
-def select_value_edges(data, edges, name=None, label=None):
-    """return the list of select arrays cut by the edges, with length = len(edges) + 1
-    """
-    select_list = []
-
-    select_list.append(select_range(
-        data, right=edges[0], name=name, label=label))
-
-    for i in range(len(edges) - 1):
-        select_list.append(select_range(
-            data, left=edges[i], right=edges[i + 1], name=name, label=label))
-
-    select_list.append(select_range(
-        data, left=edges[-1], name=name, label=label))
-
-    return select_list
 
 
 # %% func: weighted_percentile and median
@@ -384,7 +310,7 @@ def weighted_percentile(data=None, weights=None,
         data = data.copy()
 
     # select values
-    select = attr.combine_selections(select, reference=data)
+    select = sel.combine(select, reference=data)
     data = np.where(select, data, np.nan)
 
     # when weights is not set, calculate the percentiles directly
@@ -431,27 +357,6 @@ def weighted_percentile(data=None, weights=None,
 
 def median(data, weights=None):
     return weighted_percentile(data, weights=weights)
-
-
-# %% func: select percentile
-def select_percentile(x,
-                      percentile=[0.25, 0.50, 0.75],
-                      weights=None,
-                      select=slice(None)):
-    """percentile must be a list or array
-    """
-    percentile = np.array(percentile)
-    cuts = weighted_percentile(data=x, weights=weights,
-                               select=select,
-                               percentile=percentile)
-    nbins = len(cuts) + 1
-    select_percentile = np.ones((nbins, len(x)), dtype=bool)
-    for i in range(nbins):
-        if i != 0:
-            select_percentile[i] &= (x > cuts[i - 1])
-        if i != nbins - 1:
-            select_percentile[i] &= (x < cuts[i])
-    return select_percentile
 
 
 # %% func: binning
@@ -504,10 +409,10 @@ def value_in_bin(index_in_bin=None, data=None, weights=None,
         data = np.ones_like(index_in_bin)
     data_in_bin = data[index_in_bin]  # usually used in calculating hist when only weights are given
 
-    select = select_good(data_in_bin)
+    select = sel.good(data_in_bin)
     if weights is not None:
         weights_in_bin = weights[index_in_bin]
-        select = select & select_good(weights_in_bin)
+        select = select & sel.good(weights_in_bin)
         select = select & (weights_in_bin != 0.)
 
     bootstrap_args = dict(
@@ -599,7 +504,7 @@ def bin_x(x, y, weights=None,
     ys, y_err, x_centers
     """
 
-    select = attr.combine_selections(select, reference=x)
+    select = sel.combine(select, reference=x)
     x = x[select]
     y = y[select]
     weights = weights[select] if weights is not None else None
@@ -697,7 +602,7 @@ def bin_map(x, y, z=None, weights=None, func=mean,
     x_bin_edges, y_bin_edges: 1-d array with length = nbins+1. Similar with np.histogram2d
     """
 
-    select = attr.combine_selections(select, reference=x)
+    select = sel.combine(select, reference=x)
     x = x[select]
     y = y[select]
     if z is not None:
@@ -810,7 +715,7 @@ def hist(x, weights=None,
     -------
     hist, hist_err, bin_center
     """
-    select = attr.combine_selections(select, reference=x)
+    select = sel.combine(select, reference=x)
     x = x[select]
 
     bin_edges, index_in_bin = binning(
