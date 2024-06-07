@@ -55,9 +55,10 @@ default_savedir = 'figures'
 def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
                        special_suffix='', select=[],
                        filename=None, title=None,
+                       filetype='pdf'
                        ):
     """
-    save file as 'figures/X-Y-Z-{special_suffix}, {title}.pdf' by default.
+    save file as 'figures/X-Y-Z-{special_suffix}, {title}.{filetype}' by default.
 
     x, y, z: Columns or str.
 
@@ -91,7 +92,7 @@ def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
             filename = f'{filename}, {select_name}'
     # else, use the overwritten filename
 
-    filename = f'{filename}.pdf'
+    filename = f'{filename}.{filetype}'
 
     if title is None and select_name != '':
         title = select_name
@@ -121,7 +122,7 @@ def set_plot(special_suffix=''):
                           plt_args=None,
                           title=None,
                           filename=None, savedir=default_savedir,
-                          ax=None,
+                          ax=None, cbar_ax=None,
                           plot_cbar=True,
                           plot_bg=False,
                           proj=None,
@@ -193,6 +194,7 @@ def set_plot(special_suffix=''):
                                    *x_y_z,
                                    select=select,
                                    plt_args=plt_args,
+                                   cbar_ax=cbar_ax,
                                    **kwargs)
                 # ---- DRAWING ENDS------
 
@@ -206,8 +208,9 @@ def set_plot(special_suffix=''):
                 ax.set_rlim(kwargs.get('y_left'), kwargs.get('y_right'))
 
             already_has_cbar = fig.axes[-1].get_label() == '<colorbar>'
+            already_has_cbar &= cbar_ax is None
             if have_z and plot_cbar and not already_has_cbar:
-                cbar = fig.colorbar(img)
+                cbar = fig.colorbar(img, ax=ax, cax=cbar_ax)
                 img.set_clim(kwargs['z_left'], kwargs['z_right'])
                 cbar.set_label(kwargs['z_label'])
 
@@ -382,8 +385,11 @@ def _contour(ax, x_edges, y_edges, z, plt_args,
 
         ax.clabel(img, **clabel_args)
 
+    breakpoint()
     if plot_contour_cbar:
         already_has_cbar = ax.figure.axes[-1].get_label() == '<colorbar>'
+        already_has_cbar &= not plot_contourf
+        already_has_cbar &= kwargs.get('cbar_ax', None) is None
         if already_has_cbar:
             cbar_ax = ax.figure.axes[-1]
             plt_colors = plt_args.get('colors')
@@ -512,7 +518,7 @@ def hexbin(ax, x, y, z=None, select=slice(None),
 def bin_map(x, y, z=None, *,
             select=slice(None), title=None,
             plot_contour=1, plot_img=1,
-            at_least=1,
+            at_least=1, fill_nan=True,
             z_log=False,
             contour_levels=15,
             step_follow_window=False,
@@ -541,6 +547,7 @@ def bin_map(x, y, z=None, *,
     plot_contour=1,  # 0: no contour, 1: contour of z, 2: contour of histogram
     plot_img=1,  # 0: no img, 1: img of z, 2: img of histogram
     contour_levels and plot_contourf is passed to plot._contour when plot_contour is set.
+    fill_nan: if True, fill the nan values with at_least. Works only when z is None.
 
     In kwargs:
         everything of calc.bin_map, img and _contour
@@ -576,7 +583,10 @@ def bin_map(x, y, z=None, *,
         else:
             attr.set(z_map, label='weighted counts')
 
-        z_map_with_nan = attr.sift(z_map, min_=at_least, inplace=False)
+        if fill_nan:
+            z_map_with_nan = attr.sift(z_map, min_=at_least, inplace=False)
+        else:
+            z_map_with_nan = z_map
 
         if plot_img:
             ax = img(x_edges, y_edges, z_map_with_nan,
