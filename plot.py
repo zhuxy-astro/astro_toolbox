@@ -7,7 +7,7 @@ import os
 import warnings
 
 import numpy as np
-import matplotlib
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 # from pandas import DataFrame, Series
 # from astropy.table import Table
@@ -20,31 +20,32 @@ from . import attr, calc, sel
 
 # from importlib import reload
 # reload(plt)
-# reload(matplotlib)
+# reload(mpl)
 
 # Yangyao Chen's settings
 # plt.style.use(["classic"])
-# matplotlib.rc('font', family='monospace', weight='normal', size=20)
-matplotlib.rc('lines', linewidth=3)
+# mpl.rc('font', family='monospace', weight='normal', size=20)
+mpl.rc('lines', linewidth=3)
 
 c_frame = (0, 0, 0, .8)
 for tick in 'xtick', 'ytick':
-    matplotlib.rc(f'{tick}.major', width=1.5, size=8)
-    matplotlib.rc(f'{tick}.minor', width=1, size=4, visible=True)
-    matplotlib.rc(tick, color=c_frame, labelsize=15, direction='in')
-matplotlib.rc('xtick', top=True)
-matplotlib.rc('ytick', right=True)
-matplotlib.rc('axes', linewidth=1.5, edgecolor=c_frame, labelweight='normal')
-# matplotlib.rc('grid', color=c_frame)
-matplotlib.rc('patch', edgecolor=c_frame)
+    mpl.rc(f'{tick}.major', width=1.5, size=8)
+    mpl.rc(f'{tick}.minor', width=1, size=4, visible=True)
+    mpl.rc(tick, color=c_frame, labelsize=15, direction='in')
+mpl.rc('xtick', top=True)
+mpl.rc('ytick', right=True)
+mpl.rc('axes', linewidth=1.5, edgecolor=c_frame, labelweight='normal')
+# mpl.rc('grid', color=c_frame)
+mpl.rc('patch', edgecolor=c_frame)
 
 # my own settings
-# matplotlib.rc('font', family='serif', serif="Times New Roman", size=18)
-matplotlib.rc('font', size=18)
-matplotlib.rc('mathtext', fontset='cm')
-matplotlib.rc('figure.subplot', bottom=0.125, left=0.2)  # to avoid labels being covered by the window boundary
-matplotlib.rc('axes', labelpad=1.)  # make the labels closer to the axis, by default 4.0
-matplotlib.rc('savefig', format='pdf', dpi=300, directory='~/Downloads')
+# mpl.rc('font', family='serif', serif="Times New Roman", size=18)
+mpl.rc('font', size=18)
+mpl.rc('mathtext', fontset='cm')
+mpl.rc('figure.subplot', bottom=0.125, left=0.2)  # to avoid labels being covered by the window boundary
+mpl.rc('axes', labelpad=1.)  # make the labels closer to the axis, by default 4.0
+mpl.rc('savefig', format='pdf', dpi=300, directory='~/Downloads')
+mpl.rc('figure.constrained_layout', use=True)
 
 default_cmap = 'coolwarm'
 
@@ -63,7 +64,7 @@ def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
     x, y, z: Columns or str.
 
     title = None: use the name of the selections by default, no title if ''.
-        only used as title above the figure, not in the filename
+        only used as title above the axis, not in the filename
 
     If filename is set to '', no file will be saved.
     Used by plotting functions not decorated by set_plot.
@@ -94,10 +95,9 @@ def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
 
     filename = f'{filename}.{filetype}'
 
-    if title is None and select_name != '':
+    if title is None and select_name != '' and title != '':
+        # Do not set title if it is empty
         title = select_name
-    # if title != '':
-    # set title even it is empty
     ax.set_title(title, fontfamily='sans-serif', fontsize=16)
 
     if not os.path.exists(savedir):
@@ -143,6 +143,7 @@ def set_plot(special_suffix=''):
             plot_cbar=True,
             proj=None,  # could be 'aitoff' or 'polar'
             legend=12,  # 0: no legend, >0: legend fontsize
+            cbar_ax=None,  # 'new': create a new cbar, 'existing': use the existing cbar, ax: use the ax as cbar
 
             In kwargs:
                 'x_label', 'x_left', 'x_right', 'x_line',
@@ -163,7 +164,10 @@ def set_plot(special_suffix=''):
                 plt_args = dict()
 
             if ax is None:
-                fig, ax = plt.subplots(subplot_kw={'projection': proj})
+                fig, ax = plt.subplots(
+                    subplot_kw={'projection': proj},
+                    layout='constrained'
+                )
             else:
                 fig = ax.figure
 
@@ -208,8 +212,11 @@ def set_plot(special_suffix=''):
                 ax.set_rlim(kwargs.get('y_left'), kwargs.get('y_right'))
 
             already_has_cbar = fig.axes[-1].get_label() == '<colorbar>'
-            already_has_cbar &= cbar_ax is None
-            if have_z and plot_cbar and not already_has_cbar:
+            if have_z and plot_cbar:
+                if already_has_cbar:
+                    cbar_ax = fig.axes[-1]
+                else:
+                    cbar_ax, _ = mpl.colorbar.make_axes([ax for ax in fig.axes])
                 cbar = fig.colorbar(img, ax=ax, cax=cbar_ax)
                 img.set_clim(kwargs['z_left'], kwargs['z_right'])
                 cbar.set_label(kwargs['z_label'])
@@ -268,7 +275,7 @@ def img(ax, x_edges, y_edges, z, plt_args, **kwargs):
 def _calc_contour_levels(z, contour_levels, **kwargs):
     """
     contour_levels:
-        if int, it is the number of levels;
+        if int, it is the number of levels, i.e., the number of intervals;
         if a float between 0 and 1, it is the percentile, and z is treated as normalized histogram. 15 levels is used;
         if a list of floats all between 0 and 1, it is the list of percentiles, with z treated as normalized histogram;
         if a list of floats not all between 0 and 1, it is the list of levels of z.
@@ -278,13 +285,13 @@ def _calc_contour_levels(z, contour_levels, **kwargs):
 
     if not levels_is_list and isinstance(contour_levels, int):
         assert contour_levels > 0, 'contour_levels should be a positive integer.'
-        levels = np.linspace(kwargs['z_left'], kwargs['z_right'], contour_levels)
+        levels = np.linspace(kwargs['z_left'], kwargs['z_right'], contour_levels + 1)
 
     elif not levels_is_list and isinstance(contour_levels, float):
         assert 0 < contour_levels < 1, 'contour_levels should be a float between 0 and 1.'
         percentile_outside = 1 - contour_levels
         levels = calc.weighted_percentile(weights=z, percentile=percentile_outside)
-        levels = np.linspace(levels, z.max(), 15)
+        levels = np.linspace(levels, z.max(), 15 + 1)
 
     elif levels_is_list and all([0 <= i <= 1 for i in contour_levels]):
         percentile_outside = 1 - np.array(contour_levels)
@@ -308,7 +315,6 @@ def _contour(ax, x_edges, y_edges, z, plt_args,
              contour_levels=15,
              labels=None,
              clabel_args=None,
-             plot_contour_cbar=True,
              **kwargs):
     """
     Plot contour or contourf of the 2-d map, based on whether plot_contourf is set.
@@ -384,28 +390,6 @@ def _contour(ax, x_edges, y_edges, z, plt_args,
         clabel_args = default_clabel_args
 
         ax.clabel(img, **clabel_args)
-
-    breakpoint()
-    if plot_contour_cbar:
-        already_has_cbar = ax.figure.axes[-1].get_label() == '<colorbar>'
-        already_has_cbar &= not plot_contourf
-        already_has_cbar &= kwargs.get('cbar_ax', None) is None
-        if already_has_cbar:
-            cbar_ax = ax.figure.axes[-1]
-            plt_colors = plt_args.get('colors')
-            if isinstance(plt_colors, str):
-                plt_colors = np.repeat(plt_colors, len(img.levels))
-            lws = plt_args.get('linewidths')
-            if isinstance(lws, (int, float)):
-                lws = np.repeat(lws, len(img.levels))
-            lss = plt_args.get('linestyles')
-            if isinstance(lss, str):
-                lss = np.repeat(lss, len(img.levels))
-            for level, color, lw, ls in zip(img.levels, plt_colors, lws, lss):
-                cbar_ax.axhline(level, color=color, linewidth=lw, linestyle=ls)
-        else:
-            cbar = plt.colorbar(img)
-            cbar.set_label(kwargs['z_label'])
 
     return img
 
@@ -524,6 +508,8 @@ def bin_map(x, y, z=None, *,
             step_follow_window=False,
             contour_args=None, img_args=None,
             plot_contourf=False,
+            plot_cbar=True,
+            plot_contour_cbar=False,
             savedir=default_savedir, filename=None,
             **kwargs):
     """
@@ -565,13 +551,13 @@ def bin_map(x, y, z=None, *,
     if z_log:
         z_map = np.log10(z_map)
         at_least = np.log10(at_least)
-        kwargs.setdefault('plot_cbar', False)
-        kwargs.setdefault('plot_contour_cbar', False)
+        plot_cbar = False
+        plot_contour_cbar = False
 
     if z is None and not step_follow_window:
         # calc histogram, but not the real number in each window
-        kwargs.setdefault('plot_cbar', False)
-        kwargs.setdefault('plot_contour_cbar', False)
+        plot_cbar = False
+        plot_contour_cbar = False
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
     # edges is left here not converted into centers because this is done in scatter and img.
@@ -589,24 +575,24 @@ def bin_map(x, y, z=None, *,
             z_map_with_nan = z_map
 
         if plot_img:
-            ax = img(x_edges, y_edges, z_map_with_nan,
+            ax = img(x_edges, y_edges, z_map_with_nan, plot_cbar=plot_cbar,
                      filename='', plt_args=img_args, select=select, **kwargs)
             kwargs['ax'] = ax
 
         if plot_contour:
             z_map_with_nan = z_map_with_nan / calc.sum(z_map_with_nan)
             ax = _contour(
-                x_edges, y_edges, z_map_with_nan, contour_levels=contour_levels,
+                x_edges, y_edges, z_map_with_nan, contour_levels=contour_levels, plot_cbar=plot_contour_cbar,
                 filename='', plt_args=contour_args, select=select, plot_contourf=plot_contourf, **kwargs)
     else:
         z_map = attr.array2column(z_map, meta_from=z)
         if plot_img:
             ax = img(x_edges, y_edges, z_map,
-                     filename='', plt_args=img_args, select=select, **kwargs)
+                     filename='', plt_args=img_args, select=select, plot_cbar=plot_cbar, **kwargs)
             kwargs['ax'] = ax
         if plot_contour == 1:
             ax = _contour(x_edges, y_edges, z_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
-                          filename='', plt_args=contour_args, select=select, **kwargs)
+                          plot_cbar=plot_contour_cbar, filename='', plt_args=contour_args, select=select, **kwargs)
         elif plot_contour == 2:
             hist_map, x_edges, y_edges = calc.bin_map(x, y, **kwargs)
             ax = _contour(x_edges, y_edges, hist_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
@@ -662,11 +648,10 @@ def contour_scatter(x, y, *,
         scatter_args = default_scatter_args
 
         from contourpy import contour_generator
-        from matplotlib import path
         cont_gen = contour_generator(z=z_map, x=(x_edges[1:] + x_edges[:-1]) / 2, y=(y_edges[1:] + y_edges[:-1]) / 2)
         levels_min = np.min(_calc_contour_levels(z_map, contour_levels, **kwargs))
         lines = cont_gen.lines(levels_min)
-        p = path.Path(lines[0])
+        p = mpl.path.Path(lines[0])
         select_outside = ~p.contains_points(np.column_stack([x, y]))
 
         if select != slice(None):
