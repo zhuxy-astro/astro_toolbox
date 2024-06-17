@@ -264,21 +264,21 @@ def curve_fit(f, xdata, ydata, *args, **kwargs):
 
 
 # %% func: fraction
-def fraction(select, within=slice(None), weights=None, print_info=False):
-    """In simple calculating the fraction without `within` and just `weights`, the function is equivalent to `mean`.
+def fraction(array, select=slice(None), weights=None, print_info=False):
+    """In simple calculating the fraction without `select` and just `weights`, the function is equivalent to `mean`.
     """
-    # combine `within` when it is a list, and save `within` from slice(None)
-    within = sel.combine(within, reference=select)
-    within = np.array(within, dtype=bool)
+    # combine `select` when it is a list, and save `select` from slice(None)
+    select = sel.combine(select, reference=array)
     select = np.array(select, dtype=bool)
-    within = within & sel.good(select)
+    array = np.array(array, dtype=bool)
+    select = select & sel.good(array)
 
     if weights is None:
-        denominator = np.nansum(within)
-        numerator = np.nansum(select & within)
+        denominator = np.nansum(select)
+        numerator = np.nansum(array & select)
     else:
-        denominator = np.nansum(weights[within])
-        numerator = np.nansum(weights[select & within])
+        denominator = np.nansum(weights[select])
+        numerator = np.nansum(weights[array & select])
 
     if print_info:
         print(f'{numerator} / {denominator}')
