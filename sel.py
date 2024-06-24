@@ -111,9 +111,9 @@ def good(array):
     return ~mask
 
 
-# %% func: select span and select value_edges
-def span(data, left=None, right=None,
-         name=None, label=None):
+# %% func: select range_ and select value_edges
+def range_(data, left=None, right=None,
+           name=None, label=None):
     """return a select array cut by one edge or two edges
     """
     if name is None:
@@ -160,14 +160,14 @@ def edges(data, edges, name=None, label=None):
     """
     select_list = []
 
-    select_list.append(span(
+    select_list.append(range_(
         data, right=edges[0], name=name, label=label))
 
     for i in range(len(edges) - 1):
-        select_list.append(span(
+        select_list.append(range_(
             data, left=edges[i], right=edges[i + 1], name=name, label=label))
 
-    select_list.append(span(
+    select_list.append(range_(
         data, left=edges[-1], name=name, label=label))
 
     return select_list
