@@ -980,7 +980,7 @@ def one_to_one(x, y, *,
         default_plt_args.update(plt_args)
     plt_args = default_plt_args
 
-    ax = kwargs.pop('ax', plt.subplots(figsize=(5, 4.8 + plot_sigma + plot_delta))[1])
+    ax = kwargs.pop('ax', plt.subplots(figsize=(5, 5 + plot_sigma + plot_delta))[1])
     ax.set(aspect=1)
     ax.tick_params(axis="x", labelbottom=False, labeltop=True)
 
