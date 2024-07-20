@@ -285,7 +285,13 @@ def _calc_contour_levels(z, contour_levels, **kwargs):
 
     if not levels_is_list and isinstance(contour_levels, int):
         assert contour_levels > 0, 'contour_levels should be a positive integer.'
-        levels = np.linspace(kwargs['z_left'], kwargs['z_right'], contour_levels + 1)
+        left = kwargs.get('z_left')
+        if left is None:
+            left = calc.min(z)
+        right = kwargs.get('z_right')
+        if right is None:
+            right = calc.max(z)
+        levels = np.linspace(left, right, contour_levels + 1)
 
     elif not levels_is_list and isinstance(contour_levels, float):
         assert 0 < contour_levels < 1, 'contour_levels should be a float between 0 and 1.'
@@ -613,7 +619,7 @@ def bin_map(x, y, z=None, *,
 def contour_scatter(x, y, *,
                     select=slice(None), title=None,
                     contour_args=None, scatter_args=None,
-                    contour_levels=15,
+                    contour_levels=0.954,
                     plot_scatter=True,
                     plot_contour=True,
                     plot_contourf=True,
@@ -649,13 +655,19 @@ def contour_scatter(x, y, *,
 
         from contourpy import contour_generator
         cont_gen = contour_generator(z=z_map, x=(x_edges[1:] + x_edges[:-1]) / 2, y=(y_edges[1:] + y_edges[:-1]) / 2)
+        # contour_args_for_levels = dict() if contour_args is None else contour_args
         levels_min = np.min(_calc_contour_levels(z_map, contour_levels, **kwargs))
         lines = cont_gen.lines(levels_min)
-        p = mpl.path.Path(lines[0])
-        select_outside = ~p.contains_points(np.column_stack([x, y]))
+        select_outside = np.ones_like(x, dtype=bool)
+        for line in lines:
+            p = mpl.path.Path(line)
+            select_outside &= ~p.contains_points(np.column_stack([x, y]))
 
-        if select != slice(None):
-            select_outside &= sel.combine(select)
+        if isinstance(select, slice):
+            mask = np.zeros_like(select_outside, dtype=bool)
+            mask[select] = True
+            select = mask
+        select_outside &= select
 
         ax = scatter(x, y, plt_args=scatter_args, select=select_outside, ax=ax, filename='', **kwargs)
 
@@ -779,7 +791,7 @@ def bin_x(x, y=None, *, y_log=False,
 
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in bin_x. '
-                         'Use errorbar_args,fill_args and scatter_args instead.')
+                         'Use errorbar_args, fill_args and scatter_args instead.')
 
     ys, y_err, x_centers = calc.bin_x(x, y, mode=mode, select=select, at_least=at_least, bootstrap=bootstrap, **kwargs)
     ys = attr.array2column(ys, meta_from=y)
@@ -880,3 +892,147 @@ def loess(ax, x, y, z, plt_args=None, plot_border=True,
 
     img = ax.scatter(x_use, y_use, **plt_args)
     return img
+
+
+# %% func: map_scatter
+def map_scatter(x, y, z=None,
+                select=slice(None),
+                title=None,
+                plot_contour=1, plot_img=1,
+                at_least=1, fill_nan=True,
+                z_log=False,
+                contour_levels=15,
+                step_follow_window=False,
+                plt_args=None,
+                savedir=default_savedir, filename=None,
+                **kwargs):
+    select = sel.combine(select, reference=x)
+    z_map, x_edges, y_edges = calc.bin_map(x, y, z, select=select, at_least=at_least,
+                                           step_follow_window=step_follow_window, **kwargs)
+    if z_log:
+        z_map = np.log10(z_map)
+        at_least = np.log10(at_least)
+        plot_cbar = False
+
+    if z is None and not step_follow_window:
+        # calc histogram, but not the real number in each window
+        plot_cbar = False
+    x_edges = attr.array2column(x_edges, meta_from=x)
+    y_edges = attr.array2column(y_edges, meta_from=y)
+    # edges is left here not converted into centers because this is done in scatter and img.
+
+    if z is None:
+        z_map = attr.array2column(z_map, name='hist')
+        if kwargs.get('weights') is None:
+            attr.set(z_map, label='counts')
+        else:
+            attr.set(z_map, label='weighted counts')
+
+        if fill_nan:
+            z_map_with_nan = attr.sift(z_map, min_=at_least, inplace=False)
+        else:
+            z_map_with_nan = z_map
+
+        ax = img(x_edges, y_edges, z_map_with_nan, plot_cbar=plot_cbar,
+                 filename='', plt_args=plt_args, select=select, **kwargs)
+        kwargs['ax'] = ax
+
+    else:
+        z_map = attr.array2column(z_map, meta_from=z)
+        ax = img(x_edges, y_edges, z_map,
+                 filename='', plt_args=plt_args, select=select, plot_cbar=plot_cbar, **kwargs)
+        kwargs['ax'] = ax
+
+    set_title_save_fig(ax=ax, x=x, y=y, z=z, title=title,
+                       savedir=savedir, special_suffix='map', select=select, filename=filename)
+
+    return ax
+
+
+# %% func: one-to-one
+@attr.set_values(to_set=[
+    'x_left', 'x_right', 'x_label',
+    'y_left', 'y_right', 'y_label'],
+    set_default=True)
+def one_to_one(x, y, *,
+               select=slice(None), title=None,
+               hexbin_args=None,
+               sigma_args=None, delta_args=None,
+               plot_sigma=True, plot_delta=True,
+               sigma_left=0, sigma_right=None,
+               delta_left=None, delta_right=None,
+               one_to_one_args=None,
+               plot_one_to_one=True,
+               savedir=default_savedir, filename=None,
+               **kwargs):
+    """
+    Need to set filenames manually.
+    """
+    if kwargs.get('plt_args') is not None:
+        raise ValueError('plt_args is not allowed in one_to_one. Use and contour_args instead.')
+
+    default_hexbin_args = dict(
+        filename='',
+        x_label='' if plot_delta or plot_sigma else None,
+        z_cmap='viridis',
+        bins=[200, 200],
+    )
+    if hexbin_args is not None:
+        default_hexbin_args.update(hexbin_args)
+    hexbin_args = default_hexbin_args
+
+    ax = kwargs.pop('ax', plt.subplots(figsize=(5, 5.3 + plot_sigma + plot_delta))[1])
+    ax.set(aspect=1)
+
+    hexbin(x, y, select=select, ax=ax, **hexbin_args)
+    # contour_scatter(x, y, select=select, ax=ax, **hexbin_args)
+
+    left = calc.min([kwargs['x_left'], kwargs['y_left']])
+    right = calc.max([kwargs['x_right'], kwargs['y_right']])
+    ax.plot([left, right], [left, right], 'r--', lw=2)
+    ax.set_xlim(left, right)
+    ax.set_ylim(left, right)
+    ax.tick_params(axis="x", labelbottom=False, labeltop=True)
+
+    if plot_sigma or plot_delta:
+        delta, sigma, x_centers = calc.bin_x(
+            x, y - x, select=select, **kwargs)
+        if kwargs.get('mode', 'mean') == 'median':
+            sigma = sigma[1] + sigma[0]
+    if plot_sigma:
+        ax_sigma = ax.inset_axes([0, -0.3, 1, 0.25], sharex=ax)
+        default_sigma_args = dict(
+            lw=2, c='k'
+        )
+        if sigma_args is not None:
+            default_sigma_args.update(sigma_args)
+        sigma_args = default_sigma_args
+        ax_sigma.set_ylim(sigma_left, sigma_right)
+        ax_sigma.plot(x_centers, sigma, **sigma_args)
+        # ax_sigma.plot([left, right], [0., 0.], 'r--', lw=2)
+        ax_sigma.set_ylabel(r'$\sigma$')
+        ax_sigma.set_xlim(left, right)
+        ax_sigma.tick_params(axis="x", labelbottom=1 - plot_delta)
+        if not plot_delta:
+            ax_sigma.set_xlabel(kwargs['x_label'])
+
+    if plot_delta:
+        ax_delta = ax.inset_axes([0, -0.3 - 0.3 * plot_sigma, 1, 0.25], sharex=ax)
+        default_delta_args = dict(
+            lw=2, c='k',
+        )
+        if delta_args is not None:
+            default_delta_args.update(delta_args)
+        delta_args = default_delta_args
+        ax_delta.plot(x_centers, delta, **delta_args)
+        ax_delta.set_ylabel(r'$\Delta$')
+        ax_delta.plot([left, right], [0., 0.], 'r--', lw=2)
+        ax_delta.set_xlim(left, right)
+        ax_delta.set_ylim(delta_left, delta_right)
+        ax_delta.tick_params(axis="x", labelbottom=True)
+        ax_delta.set_xlabel(kwargs['x_label'])
+
+    set_title_save_fig(ax=ax, x=x, y=y, title=title,
+                       savedir=savedir, special_suffix='1to1', select=select, filename=filename)
+
+    return ax

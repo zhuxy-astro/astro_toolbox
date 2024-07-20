@@ -88,6 +88,10 @@ def combine(list_of_selects, reference=None):
 
     select_result = np.ones_like(list_of_selects[0], dtype=bool)
     for s in list_of_selects:
+        if isinstance(s, slice):
+            mask = np.zeros_like(select_result, dtype=bool)
+            mask[s] = True
+            s = mask
         select_result &= s
     name_combined = combine_names(list_of_selects, reference, list_status)
 

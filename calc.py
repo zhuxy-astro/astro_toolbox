@@ -5,7 +5,7 @@
 import sys
 
 import numpy as np
-from astropy.cosmology import Planck15, FlatLambdaCDM
+from astropy.cosmology import Planck15  # , FlatLambdaCDM
 from scipy.interpolate import interp1d
 from scipy.spatial import KDTree
 from scipy.optimize import curve_fit as scipy_curve_fit
@@ -122,15 +122,16 @@ def fraction_err(x, y, x_err=None, y_err=None):
 
 
 # %% func: vmax_inv
-Planck_H0 = Planck15.H0
-Planck_Om0 = Planck15.Om0
+# Planck_H0 = Planck15.H0
+# Planck_Om0 = Planck15.Om0
 
 
 def vmax_inv(z_left, z_right, z_min, z_max,
              z=None,
              fill_nan=False,
              max_vmax_inv=100,
-             H0=Planck_H0, Om0=Planck_Om0
+             # H0=Planck_H0, Om0=Planck_Om0
+             cosmo=Planck15
              ):
     """
     z_left and z_right are the redshift range limit we want to consider. Float.
@@ -139,7 +140,7 @@ def vmax_inv(z_left, z_right, z_min, z_max,
     fill_nan is to fill the invalid z_min and z_max with weight=1.
     The weight is always returned as an array, 0-dimensional when the input are floats.
     """
-    cosmo = FlatLambdaCDM(H0=H0, Om0=Om0)
+    # cosmo = FlatLambdaCDM(H0=H0, Om0=Om0)
     # use interpolating in order to avoid calculating the integral many times
     zs = np.linspace(0., 1., 1000)
     zs = zs ** 2
