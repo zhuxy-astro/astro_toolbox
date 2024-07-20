@@ -914,7 +914,9 @@ def map_scatter(x, y, z=None,
     z_map, x_edges, y_edges = calc.bin_map(x, y, z, select=select, at_least=at_least,
                                            step_follow_window=step_follow_window, **kwargs)
     if z_log:
+        bad_value = z_map < 1.
         z_map = np.log10(z_map)
+        z_map[bad_value] = -1
         at_least = np.log10(at_least)
         plot_cbar = False
 
@@ -935,7 +937,7 @@ def map_scatter(x, y, z=None,
 
     z_map_interp = RegularGridInterpolator(
         (x_centers, y_centers), np.array(z_map).T,
-        method=method, bounds_error=False, fill_value=1 if z is None else np.nan)
+        method=method, bounds_error=False, fill_value=1 - z_log if z is None else np.nan)
     z_map_scatter = z_map_interp(np.array([x[select], y[select]]).T)
     z_map_scatter = attr.array2column(z_map_scatter, meta_from=z)
 
@@ -962,6 +964,7 @@ def one_to_one(x, y, *,
                plt_func=map_scatter,
                plt_args=None,
                mode='median',
+               z_log=False,
                left=None, right=None,
                sigma_args=None, delta_args=None,
                plot_sigma=True, plot_delta=True,
@@ -984,7 +987,7 @@ def one_to_one(x, y, *,
     ax.set(aspect=1)
     ax.tick_params(axis="x", labelbottom=False, labeltop=True)
 
-    plt_func(x, y, select=select, ax=ax, **plt_args)
+    plt_func(x, y, select=select, ax=ax, z_log=z_log, **plt_args)
 
     left = calc.min([kwargs['x_left'], kwargs['y_left']]) if left is None else left
     right = calc.max([kwargs['x_right'], kwargs['y_right']]) if right is None else right
