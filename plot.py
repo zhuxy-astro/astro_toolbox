@@ -6,9 +6,11 @@ from functools import wraps
 import os
 import warnings
 
+from contourpy import contour_generator
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from scipy.interpolate import RegularGridInterpolator
 # from pandas import DataFrame, Series
 # from astropy.table import Table
 # import astro_toolbox.calc as calc
@@ -653,7 +655,6 @@ def contour_scatter(x, y, *,
             default_scatter_args.update(scatter_args)
         scatter_args = default_scatter_args
 
-        from contourpy import contour_generator
         cont_gen = contour_generator(z=z_map, x=(x_edges[1:] + x_edges[:-1]) / 2, y=(y_edges[1:] + y_edges[:-1]) / 2)
         # contour_args_for_levels = dict() if contour_args is None else contour_args
         levels_min = np.min(_calc_contour_levels(z_map, contour_levels, **kwargs))
@@ -663,6 +664,7 @@ def contour_scatter(x, y, *,
             p = mpl.path.Path(line)
             select_outside &= ~p.contains_points(np.column_stack([x, y]))
 
+        select = sel.combine(select)
         if isinstance(select, slice):
             mask = np.zeros_like(select_outside, dtype=bool)
             mask[select] = True
@@ -898,14 +900,16 @@ def loess(ax, x, y, z, plt_args=None, plot_border=True,
 def map_scatter(x, y, z=None,
                 select=slice(None),
                 title=None,
-                plot_contour=1, plot_img=1,
-                at_least=1, fill_nan=True,
+                at_least=1,
                 z_log=False,
-                contour_levels=15,
+                method='linear',
                 step_follow_window=False,
                 plt_args=None,
+                plot_cbar=True,
                 savedir=default_savedir, filename=None,
                 **kwargs):
+    """note that the color of the scatter of the outliers will be affected by neighbouring points when z is set.
+    """
     select = sel.combine(select, reference=x)
     z_map, x_edges, y_edges = calc.bin_map(x, y, z, select=select, at_least=at_least,
                                            step_follow_window=step_follow_window, **kwargs)
@@ -919,7 +923,8 @@ def map_scatter(x, y, z=None,
         plot_cbar = False
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
-    # edges is left here not converted into centers because this is done in scatter and img.
+    x_centers = (x_edges[:-1] + x_edges[1:]) / 2
+    y_centers = (y_edges[:-1] + y_edges[1:]) / 2
 
     if z is None:
         z_map = attr.array2column(z_map, name='hist')
@@ -928,23 +933,21 @@ def map_scatter(x, y, z=None,
         else:
             attr.set(z_map, label='weighted counts')
 
-        if fill_nan:
-            z_map_with_nan = attr.sift(z_map, min_=at_least, inplace=False)
-        else:
-            z_map_with_nan = z_map
+    z_map_interp = RegularGridInterpolator(
+        (x_centers, y_centers), np.array(z_map).T,
+        method=method, bounds_error=False, fill_value=1 if z is None else np.nan)
+    z_map_scatter = z_map_interp(np.array([x[select], y[select]]).T)
+    z_map_scatter = attr.array2column(z_map_scatter, meta_from=z)
 
-        ax = img(x_edges, y_edges, z_map_with_nan, plot_cbar=plot_cbar,
-                 filename='', plt_args=plt_args, select=select, **kwargs)
-        kwargs['ax'] = ax
-
-    else:
-        z_map = attr.array2column(z_map, meta_from=z)
-        ax = img(x_edges, y_edges, z_map,
-                 filename='', plt_args=plt_args, select=select, plot_cbar=plot_cbar, **kwargs)
-        kwargs['ax'] = ax
+    ax = kwargs.pop('ax', plt.subplots()[1])
+    if z is not None:
+        # plot scatter as background to avoid missing points
+        scatter(x, y, z, select=select, ax=ax, plt_args=plt_args, **kwargs)
+    scatter(x[select], y[select], z_map_scatter,
+            filename='', plt_args=plt_args, plot_cbar=plot_cbar, ax=ax, **kwargs)
 
     set_title_save_fig(ax=ax, x=x, y=y, z=z, title=title,
-                       savedir=savedir, special_suffix='map', select=select, filename=filename)
+                       savedir=savedir, special_suffix='map_scatter', select=select, filename=filename)
 
     return ax
 
@@ -956,48 +959,49 @@ def map_scatter(x, y, z=None,
     set_default=True)
 def one_to_one(x, y, *,
                select=slice(None), title=None,
-               hexbin_args=None,
+               plt_func=map_scatter,
+               plt_args=None,
+               mode='median',
+               left=None, right=None,
                sigma_args=None, delta_args=None,
                plot_sigma=True, plot_delta=True,
-               sigma_left=0, sigma_right=None,
+               sigma_left=None, sigma_right=None,
                delta_left=None, delta_right=None,
-               one_to_one_args=None,
-               plot_one_to_one=True,
                savedir=default_savedir, filename=None,
                **kwargs):
-    """
-    Need to set filenames manually.
-    """
-    if kwargs.get('plt_args') is not None:
-        raise ValueError('plt_args is not allowed in one_to_one. Use and contour_args instead.')
 
-    default_hexbin_args = dict(
+    default_plt_args = dict(
         filename='',
         x_label='' if plot_delta or plot_sigma else None,
         z_cmap='viridis',
         bins=[200, 200],
     )
-    if hexbin_args is not None:
-        default_hexbin_args.update(hexbin_args)
-    hexbin_args = default_hexbin_args
+    if plt_args is not None:
+        default_plt_args.update(plt_args)
+    plt_args = default_plt_args
 
-    ax = kwargs.pop('ax', plt.subplots(figsize=(5, 5.3 + plot_sigma + plot_delta))[1])
+    ax = kwargs.pop('ax', plt.subplots(figsize=(5, 4.8 + plot_sigma + plot_delta))[1])
     ax.set(aspect=1)
+    ax.tick_params(axis="x", labelbottom=False, labeltop=True)
 
-    hexbin(x, y, select=select, ax=ax, **hexbin_args)
-    # contour_scatter(x, y, select=select, ax=ax, **hexbin_args)
+    plt_func(x, y, select=select, ax=ax, **plt_args)
 
-    left = calc.min([kwargs['x_left'], kwargs['y_left']])
-    right = calc.max([kwargs['x_right'], kwargs['y_right']])
+    left = calc.min([kwargs['x_left'], kwargs['y_left']]) if left is None else left
+    right = calc.max([kwargs['x_right'], kwargs['y_right']]) if right is None else right
     ax.plot([left, right], [left, right], 'r--', lw=2)
     ax.set_xlim(left, right)
     ax.set_ylim(left, right)
-    ax.tick_params(axis="x", labelbottom=False, labeltop=True)
+    if hasattr(x, 'name'):
+        topax = ax.secondary_xaxis('top')
+        topax.set_xlabel(x.name)
+    if hasattr(y, 'name'):
+        rightax = ax.secondary_yaxis('right')
+        rightax.set_ylabel(y.name)
 
     if plot_sigma or plot_delta:
         delta, sigma, x_centers = calc.bin_x(
-            x, y - x, select=select, **kwargs)
-        if kwargs.get('mode', 'mean') == 'median':
+            x, y - x, select=select, mode=mode, **kwargs)
+        if mode == 'median':
             sigma = sigma[1] + sigma[0]
     if plot_sigma:
         ax_sigma = ax.inset_axes([0, -0.3, 1, 0.25], sharex=ax)
@@ -1009,7 +1013,7 @@ def one_to_one(x, y, *,
         sigma_args = default_sigma_args
         ax_sigma.set_ylim(sigma_left, sigma_right)
         ax_sigma.plot(x_centers, sigma, **sigma_args)
-        # ax_sigma.plot([left, right], [0., 0.], 'r--', lw=2)
+        ax_sigma.plot([left, right], [0., 0.], 'r--', lw=2)
         ax_sigma.set_ylabel(r'$\sigma$')
         ax_sigma.set_xlim(left, right)
         ax_sigma.tick_params(axis="x", labelbottom=1 - plot_delta)
