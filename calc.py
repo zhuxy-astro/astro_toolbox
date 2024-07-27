@@ -363,39 +363,70 @@ def median(data, weights=None):
 # %% func: binning
 @attr.set_values(
     set_default=True,
-    to_set=['x_left', 'x_right', 'x_step']
+    to_set=['x_left', 'x_right',
+            'x_step', 'x_window']
 )
-def binning(x, bins=50, x_step=None,
+def binning(x, *,
+            bins=None, default_bins=50,
+            x_step=None, x_window=None,
+            step_follow_window=False,
+            window_follow_step=True,
             x_left=None, x_right=None,
             select_index=True):
     """
-    By default use bins=50, and set x_step using the range of x.
-    But as long as x_step is set, even within x.meta, bins will be overwritten.
+    If both bins and x_step is None, use default_bins;
+    If bins is None, use x_step, possibly from x.meta. This is probably the most common case;
+    If bins is set, bin number overwrites x_step;
+    If x_window is set and step_follow_window=True, overwrite x_step. This is the highest priority.
+
+    x_window=x_step if window is None or window_follow_step=True.
+
     x_left=min(x), x_right=max(x)
     select_index: whether to return the index in each bin, used in functions only.
+    default_bins: the default number of bins, usually set within the function calling this one.
 
     Returns
     -------
-    bin_edges, select_index_in_bin
-    select_index_in_bin = None if select_index is False
+    x_centers, select_index_in_bin, x_step, x_window
+        where select_index_in_bin=None if select_index is False
     """
-    if x_step is None:
-        # use bins
-        bin_edges = np.linspace(x_left, x_right, bins + 1)
-        # x_step = bin_edges[1] - bin_edges[0]
-    else:
+    step_follow_window &= (x_window is not None)
+    if step_follow_window:
+        x_step = x_window
+
+    use_step = bins is None and x_step is not None
+    use_step |= step_follow_window
+    if use_step:
         bin_edges = np.arange(x_left, x_right + x_step, x_step)
         bins = len(bin_edges) - 1
+    else:
+        if bins is None:
+            bins = default_bins
+        bin_edges = np.linspace(x_left, x_right, bins + 1)
+        x_step = bin_edges[1] - bin_edges[0]
+
+    if x_window is None or window_follow_step:
+        x_window = x_step
+
+    x_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
     if not select_index:
-        return bin_edges, None
+        return x_centers, None, x_step, x_window
 
-    digitized_x = np.digitize(x, bin_edges)
-    select_index_in_bin = [(digitized_x == i) for i in range(1, bins + 1)]
-    # the following line should be a little faster using numpy matrix
-    # select_index_in_bin = np.eye(bins + 1)[digitized_x - 1].astype(bool)
+    x_window_left = bin_edges[:-1] + (x_step - x_window) / 2.
+    x_window_right = x_window_left + x_window
 
-    return bin_edges, select_index_in_bin
+    if np.isclose(x_window, x_step):
+        digitized_x = np.digitize(x, bin_edges)
+        select_index_in_bin = [(digitized_x == i) for i in range(1, bins + 1)]
+        # the following line should be a little faster using numpy matrix
+        # select_index_in_bin = np.eye(bins + 1)[digitized_x - 1].astype(bool)
+    else:
+        select_index_in_bin = np.array([
+            (x > x_window_left[i]) & (x <= x_window_right[i])
+            for i in range(bins)])
+
+    return x_centers, select_index_in_bin, x_step, x_window
 
 
 # %% func: value_in_bin
@@ -483,13 +514,15 @@ def value_in_bin(index_in_bin=None, data=None, weights=None,
 # %% func: bin_x
 @attr.set_values(
     set_default=True,
-    to_set=['x_left', 'x_right', 'x_step']
+    to_set=['x_left', 'x_right', 'x_step', 'x_window']
 )
 def bin_x(x, y, weights=None,
           mode='mean',
           median_percentile=[0.841, 0.159],
           func=None, errfunc=None,
-          bins=20, x_step=None,
+          bins=None, x_step=None,
+          x_window=None, step_follow_window=False,
+          window_follow_step=True,
           x_left=None, x_right=None,
           select=slice(None),
           bootstrap=0,
@@ -500,6 +533,8 @@ def bin_x(x, y, weights=None,
     When mode is 'median', median_percentile is used to calculate the errors.
     `func` and `errfunc` should be functions that take 1-d array (may with a `weights` array) and return a number.
     bootstrap: 0: no bootstrap; 1: mean and confidence interval; 2: mean and std.
+
+    By default window follow step, unless step_follow_window=False is manually set.
     Returns
     -------
     ys, y_err, x_centers
@@ -510,8 +545,10 @@ def bin_x(x, y, weights=None,
     y = y[select]
     weights = weights[select] if weights is not None else None
 
-    x_edges, index_in_bin = binning(
-        x, x_left=x_left, x_right=x_right, bins=bins, x_step=x_step)
+    x_centers, index_in_bin, x_step, x_window = binning(
+        x, x_left=x_left, x_right=x_right,
+        bins=bins, x_step=x_step, x_window=x_window, default_bins=20,
+        step_follow_window=step_follow_window, window_follow_step=window_follow_step)
 
     if func is None:
         if mode == 'mean' or mode == 'meanerr':
@@ -532,7 +569,7 @@ def bin_x(x, y, weights=None,
         value_in_bin_kwargs['weights'] = weights
 
     if bootstrap:
-        with misc.Bar(len(x_edges) - 1) as bar:
+        with misc.Bar(len(x_centers)) as bar:
             value_in_bin_kwargs['bootstrap'] = 4
             ress = [value_in_bin(ind, y, bar=bar, **value_in_bin_kwargs) for ind in index_in_bin]
 
@@ -552,7 +589,6 @@ def bin_x(x, y, weights=None,
         y_err = np.array(y_err).T
         y_err = np.abs(y_err - ys)
 
-    x_centers = (x_edges[:-1] + x_edges[1:]) / 2
     return ys, y_err, x_centers
 
 
@@ -614,24 +650,17 @@ def bin_map(x, y, z=None, weights=None, func=mean,
         weights = weights[select]
 
     assert (len(x) == len(y)), "The length of input array doesn't match!"
-    data_length = len(x)
 
-    default_step_num = 40
-    if x_step is None:
-        x_step = (x_right - x_left) / default_step_num
-    if x_window is None:
-        x_window = x_step
-    if y_step is None:
-        y_step = (y_right - y_left) / default_step_num
-    if y_window is None:
-        y_window = y_step
+    default_bins = 40
+    x_centers, index_in_x_bin, x_step, x_window = binning(
+        x, x_left=x_left, x_right=x_right, x_step=x_step, x_window=x_window,
+        step_follow_window=step_follow_window, default_bins=default_bins, select_index=True)
+    y_centers, index_in_y_bin, y_step, y_window = binning(
+        y, x_left=y_left, x_right=y_right, x_step=y_step, x_window=y_window,
+        step_follow_window=step_follow_window, default_bins=default_bins, select_index=True)
 
-    if step_follow_window:
-        x_step = x_window
-        y_step = y_window
-
-    x_bin_edges = np.arange(x_left, x_right + x_step, x_step)
-    y_bin_edges = np.arange(y_left, y_right + y_step, y_step)
+    x_bin_edges = np.append(x_centers - x_step / 2, x_centers[-1] + x_step / 2)
+    y_bin_edges = np.append(y_centers - y_step / 2, y_centers[-1] + y_step / 2)
 
     if z is None and weights is None and step_follow_window:
         # calculate the real, unweighted histogram here
@@ -652,20 +681,6 @@ def bin_map(x, y, z=None, weights=None, func=mean,
 
     xbins = len(x_bin_edges) - 1
     ybins = len(y_bin_edges) - 1
-    x_window_left = x_bin_edges[:-1] + (x_step - x_window) / 2.
-    y_window_left = y_bin_edges[:-1] + (y_step - y_window) / 2.
-    x_window_right = x_window_left + x_window
-    y_window_right = y_window_left + y_window
-
-    index_in_x_bin = np.zeros([xbins, data_length], dtype=bool)
-    index_in_y_bin = np.zeros([ybins, data_length], dtype=bool)
-    for i in range(xbins):
-        index_in_x_bin[i] = x > x_window_left[i]
-        index_in_x_bin[i] &= x <= x_window_right[i]
-    for j in range(ybins):
-        index_in_y_bin[j] = y > y_window_left[j]
-        index_in_y_bin[j] &= y <= y_window_right[j]
-
     binned_map = np.zeros([xbins, ybins])
 
     """
@@ -698,10 +713,12 @@ def bin_map(x, y, z=None, weights=None, func=mean,
 # %% func: hist
 @attr.set_values(
     set_default=True,
-    to_set=['x_left', 'x_right', 'x_step']
+    to_set=['x_left', 'x_right', 'x_step', 'x_window']
 )
 def hist(x, weights=None,
-         bins=100, x_step=None,
+         bins=None, x_step=None,
+         x_window=None, step_follow_window=False,
+         window_follow_step=True,
          x_left=None, x_right=None,
          at_least=0,
          density=False, norm=False, select=slice(None), **kwargs):
@@ -711,20 +728,23 @@ def hist(x, weights=None,
     bins=100
     x_step=None, overwrite bins when set
     x_left=min(x), x_right=max(x)
+    By default window follow step, unless step_follow_window=False is manually set.
 
     Returns
     -------
-    hist, hist_err, bin_center
+    hist, hist_err, bin_centers
     """
     select = sel.combine(select, reference=x)
     x = x[select]
 
-    bin_edges, index_in_bin = binning(
-        x, bins=bins, x_step=x_step, x_left=x_left, x_right=x_right, select_index=True)
+    bin_centers, index_in_bin, x_step, x_window = binning(
+        x, bins=bins, x_step=x_step, x_left=x_left, x_right=x_right, x_window=x_window,
+        step_follow_window=step_follow_window, window_follow_step=window_follow_step,
+        default_bins=100, select_index=True)
 
     if weights is None:
         hist, bin_edges = np.histogram(
-            x, bins=bin_edges,
+            x, bins=len(bin_centers),
             range=(x_left,
                    x_right),
             density=False  # density here is manually corrected in the following
@@ -741,17 +761,16 @@ def hist(x, weights=None,
 
     hist = np.array(hist)
     hist_err = np.array(hist_err)
-    scale = 1.
     if density:
         scale = 1. / x_step
-    if norm:
+    elif norm:
         scale = 1. / np.nansum(hist)
+    else:
+        scale = 1.
     hist = hist * scale
     hist_err = hist_err * scale
 
-    bin_center = (bin_edges[:-1] + bin_edges[1:]) / 2
-
-    return hist, hist_err, bin_center
+    return hist, hist_err, bin_centers
 
 
 # %% loess2d from Kai
