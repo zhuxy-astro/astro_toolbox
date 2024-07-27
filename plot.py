@@ -47,7 +47,7 @@ mpl.rc('mathtext', fontset='cm')
 mpl.rc('figure.subplot', bottom=0.125, left=0.2)  # to avoid labels being covered by the window boundary
 mpl.rc('axes', labelpad=1.)  # make the labels closer to the axis, by default 4.0
 mpl.rc('savefig', format='pdf', dpi=300, directory='~/Downloads')
-mpl.rc('figure.constrained_layout', use=True)
+# mpl.rc('figure.constrained_layout', use=True)
 
 default_cmap = 'coolwarm'
 
@@ -129,6 +129,7 @@ def set_plot(special_suffix=''):
                           plot_bg=False,
                           proj=None,
                           legend=12,
+                          layout='constrained',
                           **kwargs):
             """
             Draw the plot and save the file.
@@ -168,7 +169,7 @@ def set_plot(special_suffix=''):
             if ax is None:
                 fig, ax = plt.subplots(
                     subplot_kw={'projection': proj},
-                    layout='constrained'
+                    layout=layout,
                 )
             else:
                 fig = ax.figure
