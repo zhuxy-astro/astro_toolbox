@@ -602,7 +602,7 @@ def bin_x(x, y, weights=None,
 )
 def bin_map(x, y, z=None, weights=None, func=mean,
             at_least=1, select=slice(None),
-            step_follow_window=False,
+            step_follow_window=False, window_follow_step=False,
             x_left=None, x_right=None,
             x_step=None, x_window=None,
             y_left=None, y_right=None,
@@ -654,10 +654,12 @@ def bin_map(x, y, z=None, weights=None, func=mean,
     default_bins = 40
     x_centers, index_in_x_bin, x_step, x_window = binning(
         x, x_left=x_left, x_right=x_right, x_step=x_step, x_window=x_window,
-        step_follow_window=step_follow_window, default_bins=default_bins, select_index=True)
+        step_follow_window=step_follow_window, window_follow_step=window_follow_step,
+        default_bins=default_bins, select_index=True)
     y_centers, index_in_y_bin, y_step, y_window = binning(
         y, x_left=y_left, x_right=y_right, x_step=y_step, x_window=y_window,
-        step_follow_window=step_follow_window, default_bins=default_bins, select_index=True)
+        step_follow_window=step_follow_window, window_follow_step=window_follow_step,
+        default_bins=default_bins, select_index=True)
 
     x_bin_edges = np.append(x_centers - x_step / 2, x_centers[-1] + x_step / 2)
     y_bin_edges = np.append(y_centers - y_step / 2, y_centers[-1] + y_step / 2)

@@ -620,13 +620,14 @@ def bin_map(x, y, z=None, *,
     to_set=['z_left', 'z_right'],
 )
 def contour_scatter(x, y, *,
-                    select=slice(None), title=None,
+                    select=slice(None),
+                    layout='constrained',
                     contour_args=None, scatter_args=None,
                     contour_levels=0.954,
                     plot_scatter=True,
                     plot_contour=True,
                     plot_contourf=True,
-                    savedir=default_savedir, filename=None,
+                    savedir=default_savedir, filename=None, title=None,
                     **kwargs):
     """
     `plt.contour` is not good at dealing with sharp edges.
@@ -638,7 +639,7 @@ def contour_scatter(x, y, *,
     if kwargs.get('plt_args') is not None:
         raise ValueError('plt_args is not allowed in contour_scatter. Use scatter_args and contour_args instead.')
 
-    ax = kwargs.pop('ax', plt.subplots()[1])
+    ax = kwargs.pop('ax', plt.subplots(layout=layout)[1])
 
     z_map, x_edges, y_edges = calc.bin_map(x, y, select=select, **kwargs)
     z_map /= calc.sum(z_map)
@@ -900,14 +901,14 @@ def loess(ax, x, y, z, plt_args=None, plot_border=True,
 # %% func: map_scatter
 def map_scatter(x, y, z=None,
                 select=slice(None),
-                title=None,
+                layout='constrained',
                 at_least=1,
                 z_log=False,
                 method='linear',
                 step_follow_window=False,
                 plt_args=None,
                 plot_cbar=True,
-                savedir=default_savedir, filename=None,
+                savedir=default_savedir, filename=None, title=None,
                 **kwargs):
     """note that the color of the scatter of the outliers will be affected by neighbouring points when z is set.
     """
@@ -938,11 +939,11 @@ def map_scatter(x, y, z=None,
 
     z_map_interp = RegularGridInterpolator(
         (x_centers, y_centers), np.array(z_map).T,
-        method=method, bounds_error=False, fill_value=1 - z_log if z is None else np.nan)
+        method=method, bounds_error=False, fill_value=not z_log if z is None else np.nan)
     z_map_scatter = z_map_interp(np.array([x[select], y[select]]).T)
     z_map_scatter = attr.array2column(z_map_scatter, meta_from=z)
 
-    ax = kwargs.pop('ax', plt.subplots()[1])
+    ax = kwargs.pop('ax', plt.subplots(layout=layout)[1])
     if z is not None:
         # plot scatter as background to avoid missing points
         scatter(x, y, z, select=select, ax=ax, plt_args=plt_args, **kwargs)
@@ -961,7 +962,8 @@ def map_scatter(x, y, z=None,
     'y_left', 'y_right', 'y_label'],
     set_default=True)
 def one_to_one(x, y, *,
-               select=slice(None), title=None,
+               select=slice(None),
+               layout='constrained',
                plt_func=map_scatter,
                plt_args=None,
                mode='median',
@@ -971,7 +973,7 @@ def one_to_one(x, y, *,
                plot_sigma=True, plot_delta=True,
                sigma_left=None, sigma_right=None,
                delta_left=None, delta_right=None,
-               savedir=default_savedir, filename=None,
+               savedir=default_savedir, filename=None, title=None,
                **kwargs):
 
     default_plt_args = dict(
@@ -984,7 +986,8 @@ def one_to_one(x, y, *,
         default_plt_args.update(plt_args)
     plt_args = default_plt_args
 
-    ax = kwargs.pop('ax', plt.subplots(figsize=(5, 5 + plot_sigma + plot_delta))[1])
+    ax = kwargs.pop('ax', plt.subplots(
+        figsize=(5, 5 + plot_sigma + plot_delta), layout=layout)[1])
     ax.set(aspect=1)
     ax.tick_params(axis="x", labelbottom=False, labeltop=True)
 
@@ -1020,7 +1023,7 @@ def one_to_one(x, y, *,
         ax_sigma.plot([left, right], [0., 0.], 'r--', lw=2)
         ax_sigma.set_ylabel(r'$\sigma$')
         ax_sigma.set_xlim(left, right)
-        ax_sigma.tick_params(axis="x", labelbottom=1 - plot_delta)
+        ax_sigma.tick_params(axis="x", labelbottom=not plot_delta)
         if not plot_delta:
             ax_sigma.set_xlabel(kwargs['x_label'])
 
