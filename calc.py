@@ -723,10 +723,13 @@ def hist(x, weights=None,
          window_follow_step=True,
          x_left=None, x_right=None,
          at_least=0,
-         density=False, norm=False, select=slice(None), **kwargs):
+         scale=1.,
+         select=slice(None), **kwargs):
     """
-    density: scaled by the step length
-    norm: further scaling to make integrated area = 1. Overwrites density.
+    scale: 'density', 'norm', 'maximum', or a float.
+        density: scaled by the step length
+        norm: scale to make integrated area = 1
+        maximum: scale to make the maximum = 1
     bins=100
     x_step=None, overwrite bins when set
     x_left=min(x), x_right=max(x)
@@ -763,12 +766,16 @@ def hist(x, weights=None,
 
     hist = np.array(hist)
     hist_err = np.array(hist_err)
-    if density:
+    if isinstance(scale, float):
+        pass
+    elif scale == 'density':
         scale = 1. / x_step
-    elif norm:
+    elif scale == 'norm':
         scale = 1. / np.nansum(hist)
+    elif scale == 'maximum':
+        scale = 1. / np.nanmax(hist)
     else:
-        scale = 1.
+        raise ValueError("scale should be 'density', 'norm', 'maximum', or a float.")
     hist = hist * scale
     hist_err = hist_err * scale
 
