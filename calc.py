@@ -6,6 +6,7 @@ import sys
 
 import numpy as np
 from astropy.cosmology import Planck15  # , FlatLambdaCDM
+from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.spatial import KDTree
 from scipy.optimize import curve_fit as scipy_curve_fit
@@ -119,6 +120,74 @@ def fraction_err(x, y, x_err=None, y_err=None):
     if y_err is None:
         y_err = np.sqrt(y)
     return x / y * np.hypot(x_err / x, y_err / y)
+
+
+# %% func: get SDSS ids
+def get_specid_dr7(pl, mj, fi):
+    return np.left_shift(pl, 48) + np.left_shift(mj, 32) + np.left_shift(fi, 22)
+
+
+def get_plate_mjd_fiberid_dr7(specid, check=False):
+    """Usage:
+    for name, col in zip(['plate', 'mjd', 'fiberid'], get_plate_mjd_fiberid(t['specobjid'])):
+        t[name] = col
+    """
+    pl = np.right_shift(specid, 48)
+    mj = np.right_shift(specid, 32) & 0xffff
+    fi = np.right_shift(specid, 22) & 0x3ff
+    if check:
+        if not np.all(specid == get_specid_dr7(pl, mj, fi)):
+            raise ValueError('Error in getting plate-mjd-fiberid from specid: '
+                             + f'{specid}, with plate-mjd-fiberid: {pl}-{mj}-{fi}')
+    result = dict(plate=pl, mjd=mj, fiberid=fi)
+    if np.ndim(specid) == 0:
+        return result
+    else:
+        return Table(result)
+
+
+def get_objid(run, rerun, camcol, field, obj, skyversion=1):
+    """return the same results as in https://github.com/esheldon/sdsspy/blob/master/sdsspy/util.py,
+    except for the sky version where they have 2
+    """
+    if np.ndim(skyversion) == 0:
+        sky_version = np.ones_like(rerun) * skyversion
+    objid = np.zeros_like(rerun, dtype='i8')
+    for col, shift in [[sky_version, 59],
+                       [rerun, 48],
+                       [run, 32],
+                       [camcol, 29],
+                       [field, 16],
+                       [obj, 0]]:
+        objid += np.left_shift(col.astype('i8'), shift)
+    return objid
+
+
+def get_5_part(obj_id, full=False):
+    """from https://github.com/esheldon/sdsspy/blob/master/sdsspy/util.py
+    """
+    masks = {'sky_version': 0x7800000000000000,
+             'rerun': 0x07FF000000000000,
+             'run': 0x0000FFFF00000000,
+             'camcol': 0x00000000E0000000,
+             'first_field': 0x0000000010000000,
+             'field': 0x000000000FFF0000,
+             'obj': 0x000000000000FFFF}
+
+    run = (obj_id & masks['run']) >> 32
+    rerun = (obj_id & masks['rerun']) >> 48
+    camcol = (obj_id & masks['camcol']) >> 29
+    field = (obj_id & masks['field']) >> 16
+    obj = (obj_id & masks['obj']) >> 0
+    sky_version = (obj_id & masks['sky_version']) >> 59
+    first_field = (obj_id & masks['first_field']) >> 28
+
+    result = dict(run=run, rerun=rerun, camcol=camcol, field=field,
+                  obj=obj, sky_version=sky_version, first_field=first_field)
+    if np.ndim(obj_id) == 0:
+        return result
+    else:
+        return Table(result)
 
 
 # %% func: vmax_inv
@@ -423,7 +492,7 @@ def binning(x, *,
         # select_index_in_bin = np.eye(bins + 1)[digitized_x - 1].astype(bool)
     else:
         select_index_in_bin = np.array([
-            (x > x_window_left[i]) & (x <= x_window_right[i])
+            (x >= x_window_left[i]) & (x < x_window_right[i])
             for i in range(bins)])
 
     return x_centers, select_index_in_bin, x_step, x_window
@@ -769,7 +838,7 @@ def hist(x, weights=None,
     if isinstance(scale, float):
         pass
     elif scale == 'density':
-        scale = 1. / x_step
+        scale = 1. / x_window
     elif scale == 'norm':
         scale = 1. / np.nansum(hist)
     elif scale == 'maximum':

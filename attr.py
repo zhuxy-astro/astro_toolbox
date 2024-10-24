@@ -310,7 +310,7 @@ def get_name(xyz, xyz_str, to_latex=False):
     """
     if isinstance(xyz, str):
         return xyz
-    if hasattr(xyz, 'name'):
+    if hasattr(xyz, 'name') and xyz.name is not None:
         return xyz.name
     else:
         if to_latex:

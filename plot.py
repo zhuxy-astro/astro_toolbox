@@ -42,7 +42,7 @@ mpl.rc('patch', edgecolor=c_frame)
 
 # my own settings
 # mpl.rc('font', family='serif', serif="Times New Roman", size=18)
-mpl.rc('font', size=18)
+mpl.rc('font', size=20)
 mpl.rc('mathtext', fontset='cm')
 mpl.rc('figure.subplot', bottom=0.125, left=0.2)  # to avoid labels being covered by the window boundary
 mpl.rc('axes', labelpad=1.)  # make the labels closer to the axis, by default 4.0
@@ -128,7 +128,7 @@ def set_plot(special_suffix=''):
                           plot_cbar=True,
                           plot_bg=False,
                           proj=None,
-                          legend=12,
+                          legend=15,
                           layout='constrained',
                           **kwargs):
             """
@@ -991,10 +991,17 @@ def one_to_one(x, y, *,
     ax.set(aspect=1)
     ax.tick_params(axis="x", labelbottom=False, labeltop=True)
 
-    plt_func(x, y, select=select, ax=ax, z_log=z_log, **plt_args)
-
     left = calc.min([kwargs['x_left'], kwargs['y_left']]) if left is None else left
     right = calc.max([kwargs['x_right'], kwargs['y_right']]) if right is None else right
+    for left_name in ['x_left', 'y_left']:
+        kwargs[left_name] = left
+        plt_args[left_name] = left
+    for right_name in ['x_right', 'y_right']:
+        kwargs[right_name] = right
+        plt_args[right_name] = right
+
+    plt_func(x, y, select=select, ax=ax, z_log=z_log, **plt_args)
+
     ax.plot([left, right], [left, right], 'r--', lw=2)
     ax.set_xlim(left, right)
     ax.set_ylim(left, right)
@@ -1010,6 +1017,7 @@ def one_to_one(x, y, *,
             x, y - x, select=select, mode=mode, **kwargs)
         if mode == 'median':
             sigma = sigma[1] + sigma[0]
+
     if plot_sigma:
         ax_sigma = ax.inset_axes([0, -0.3, 1, 0.25], sharex=ax)
         default_sigma_args = dict(
