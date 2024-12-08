@@ -908,6 +908,7 @@ def map_scatter(x, y, z=None,
                 step_follow_window=False,
                 plt_args=None,
                 plot_cbar=True,
+                plot_hist=False, hist_args=None,
                 savedir=default_savedir, filename=None, title=None,
                 **kwargs):
     """note that the color of the scatter of the outliers will be affected by neighbouring points when z is set.
@@ -963,6 +964,7 @@ def map_scatter(x, y, z=None,
     set_default=True)
 def one_to_one(x, y, *,
                select=slice(None),
+               weights=None,
                layout='constrained',
                plt_func=map_scatter,
                plt_args=None,
@@ -1000,7 +1002,7 @@ def one_to_one(x, y, *,
         kwargs[right_name] = right
         plt_args[right_name] = right
 
-    plt_func(x, y, select=select, ax=ax, z_log=z_log, **plt_args)
+    plt_func(x, y, select=select, weights=weights, ax=ax, z_log=z_log, **plt_args)
 
     ax.plot([left, right], [left, right], 'r--', lw=2)
     ax.set_xlim(left, right)
@@ -1014,7 +1016,7 @@ def one_to_one(x, y, *,
 
     if plot_sigma or plot_delta:
         delta, sigma, x_centers = calc.bin_x(
-            x, y - x, select=select, mode=mode, **kwargs)
+            x, y - x, select=select, weights=weights, mode=mode, **kwargs)
         if mode == 'median':
             sigma = sigma[1] + sigma[0]
 

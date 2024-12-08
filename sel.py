@@ -111,7 +111,10 @@ def good(array):
         mask = None
     if mask is None:
         mask = np.zeros_like(array, dtype=bool)
-    mask |= ~np.isfinite(array)
+    try:
+        mask |= ~np.isfinite(array)
+    except TypeError:
+        pass
     return ~mask
 
 
