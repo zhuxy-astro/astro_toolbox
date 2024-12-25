@@ -4,13 +4,13 @@
 # %% import
 import h5py
 import numpy as np
-from astropy.table import Table  # , hstack
+from astropy.table import Table, MaskedColumn  # , hstack
 from astropy.io import fits
 # import pandas as pd
 
 
 # %% func: read_hdf5
-def hdf2table(filename, table=Table()):
+def hdf2table(filename, t=Table()):
     """
     Usage:
         from astropy.table import Table
@@ -22,15 +22,28 @@ def hdf2table(filename, table=Table()):
         if len(f) == 1:
             key = list(f.keys())[0]
             new_table = Table(np.array(f[key]))
-            table = hstack([table, new_table])
+            t = hstack([t, new_table])
         else:
         """
         try:
-            table = Table.read(f)
+            t = Table.read(f)
         except Exception:
             for key_name in f.keys():
-                table[key_name] = f[key_name]
-    return table
+                t[key_name] = f[key_name]
+
+    # hdf5 files written by astropy will have `.mask` suffix for masked columns
+    mask_suffix = '.mask'
+    for name in t.colnames:
+        if name.endswith(mask_suffix):
+            name_clean = name.replace(mask_suffix, '')
+            if name_clean in t.colnames:
+                t[name_clean] = MaskedColumn(t[name_clean], mask=t[name])
+                t.remove_column(name)
+
+    # this should be done at reading the table with `character_as_bytes=False`, but it doesn't work.
+    # manually converting bytes tring to unicode here
+    t.convert_bytestring_to_unicode()
+    return t
 
 
 # %% func: generate col name list

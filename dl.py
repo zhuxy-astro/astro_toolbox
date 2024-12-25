@@ -189,15 +189,22 @@ class _SurveyBase:
         return img
 
     @classmethod
-    def show_fig(cls, table_row, timeout=None, naming_seq=None):
-        """show the image in plt.
+    def fig_img(cls, table_row, timeout=None):
+        """return the image as a PIL image object, which can be shown in plt.imshow(img)
         Setting of table is not necessary when using this function.
         """
-        if naming_seq is None:
-            naming_seq = cls.naming_seq
-
         response = cls._get_response(table_row, timeout=timeout)
         img = cls.validate_img(response)
+        return img
+
+    @classmethod
+    def show_fig(cls, table_row, timeout=None, naming_seq=None):
+        """show the image in plt
+        """
+        img = cls.fig_img(table_row, timeout=timeout)
+
+        if naming_seq is None:
+            naming_seq = cls.naming_seq
 
         fig = plt.figure(figsize=(6.4, 4.8))
         ax = fig.add_subplot(111)
@@ -209,26 +216,28 @@ class _SurveyBase:
 
     def _get_one_fig(
         self, table_row, failed_table, invalid_table,
+        save_in_list,
         savedir, naming_seq, suffix,
         overwrite, timeout, bar,
     ):
         """download and write one image
         putting try inside this function can avoid error raising in multitasking
         """
-        if naming_seq is None:
-            naming_seq = self.naming_seq
+        if save_in_list is None:
+            if naming_seq is None:
+                naming_seq = self.naming_seq
 
-        try:
-            filename = naming_seq(table_row) + suffix + self._extension
-        except ValueError:  # no valid name
-            invalid_table.add_row(table_row)
-            bar()
-            return
+            try:
+                filename = naming_seq(table_row) + suffix + self._extension
+            except ValueError:  # no valid name
+                invalid_table.add_row(table_row)
+                bar()
+                return
 
-        savepath = os.path.join(savedir, filename)
-        if not overwrite and os.path.exists(savepath):
-            bar()
-            return
+            savepath = os.path.join(savedir, filename)
+            if not overwrite and os.path.exists(savepath):
+                bar()
+                return
 
         # TODO: sometimes rows may fail but not in the list
         try:
@@ -236,9 +245,12 @@ class _SurveyBase:
             # _ = self.validate_img(response)  # checking validation using PIL causes error
             # it might be possible to check if the image is empty, but as SDSS
             # images have words on empty images, it is not easy to check.
-            img_content = response.content
-            with open(savepath, 'wb') as f:
-                f.write(img_content)
+            if save_in_list is not None:
+                save_in_list[table_row['index']] = self.validate_img(response)
+            else:
+                img_content = response.content
+                with open(savepath, 'wb') as f:
+                    f.write(img_content)
             bar()
         except ValueError:  # no valid image, often when the http returns something non-image
             invalid_table.add_row(table_row)
@@ -262,15 +274,23 @@ class _SurveyBase:
         pool.join()
         return failed_table, invalid_table
 
-    def get_figs(self, savedir='img', overwrite=False,
-                 naming_seq=None, suffix='', try_loops=3, timeout=None):
+    def get_figs(self,
+                 save_in_list=None,
+                 savedir='img', overwrite=False, naming_seq=None, suffix='',
+                 try_loops=3, timeout=None):
         """if naming_seq is None, use the default naming sequence for this survey
         `suffix` is before the extension but after the naming sequence.
+        if `save_in_list` is not None, it should be a list where the images will be saved, and no file will be written.
         """
-        if not os.path.exists(savedir):
-            os.mkdir(savedir)
+        if save_in_list is None:
+            if not os.path.exists(savedir):
+                os.mkdir(savedir)
+        else:
+            assert len(save_in_list) >= len(self._table), 'save_in_list should not be shorter than the table.'
 
         task_table = self._table.copy()
+        # add an index column for the order in save_in_list
+        task_table['index'] = np.arange(len(task_table))
 
         with Bar(len(task_table)) as bar:
             try_i = 0
@@ -279,12 +299,13 @@ class _SurveyBase:
                 if num_left == 0:
                     break
                 print(f"Try [{try_i + 1}]. {num_left} images to download...\n")
-                failed_table = Table(names=self._table.colnames, dtype=self._table.dtype)
-                invalid_table = Table(names=self._table.colnames, dtype=self._table.dtype)
+                failed_table = Table(names=task_table.colnames, dtype=task_table.dtype)
+                invalid_table = Table(names=task_table.colnames, dtype=task_table.dtype)
                 # the failed table will be used as the new task table
                 task_table, invalid_table = self._get_figs_once(
                     task_table, failed_table, invalid_table,
                     savedir=savedir, naming_seq=naming_seq, suffix=suffix,
+                    save_in_list=save_in_list,
                     overwrite=overwrite, timeout=timeout,
                     bar=bar,
                 )
