@@ -9,8 +9,6 @@ from astropy.table.column import MaskedColumn
 from numpy.lib.recfunctions import structured_to_unstructured
 # import pandas as pd
 
-from . import calc
-
 
 # %% array & table
 def table2array(table):
@@ -325,6 +323,9 @@ def get_default(xyz, xyz_str, attr_str, kwargs, set_default):
     attr_str is like 'left', 'right', 'label'
     set_default is bool
     """
+    # import inside the function to avoid circular import
+    from . import calc
+
     if set_default:
         if attr_str == 'left':
             default_args = (calc.min, xyz)

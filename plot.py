@@ -904,7 +904,7 @@ def map_scatter(x, y, z=None,
                 layout='constrained',
                 at_least=1,
                 z_log=False,
-                method='linear',
+                method='linear', extrapolate=True,
                 step_follow_window=False,
                 plt_args=None,
                 plot_cbar=True,
@@ -912,6 +912,7 @@ def map_scatter(x, y, z=None,
                 savedir=default_savedir, filename=None, title=None,
                 **kwargs):
     """note that the color of the scatter of the outliers will be affected by neighbouring points when z is set.
+    `extrapolate` is used for points outside the edge of "bin centers" in the histogram
     """
     select = sel.combine(select, reference=x)
     z_map, x_edges, y_edges = calc.bin_map(x, y, z, select=select, at_least=at_least,
@@ -938,14 +939,18 @@ def map_scatter(x, y, z=None,
         else:
             attr.set(z_map, label='weighted counts')
 
+    if extrapolate:
+        fill_value = None
+    else:
+        fill_value = not z_log if z is None else np.nan
     z_map_interp = RegularGridInterpolator(
         (x_centers, y_centers), np.array(z_map).T,
-        method=method, bounds_error=False, fill_value=not z_log if z is None else np.nan)
+        method=method, bounds_error=False, fill_value=fill_value)
     z_map_scatter = z_map_interp(np.array([x[select], y[select]]).T)
     z_map_scatter = attr.array2column(z_map_scatter, meta_from=z)
 
     ax = kwargs.pop('ax', plt.subplots(layout=layout)[1])
-    if z is not None:
+    if z is not None and not extrapolate:
         # plot scatter as background to avoid missing points
         scatter(x, y, z, select=select, ax=ax, plt_args=plt_args, **kwargs)
     scatter(x[select], y[select], z_map_scatter,

@@ -10,7 +10,7 @@ from functools import partial
 import numpy as np
 from astropy.table import Table
 import matplotlib.pyplot as plt
-from PIL import Image
+from PIL import Image  # installed using pillow
 
 from .misc import Bar
 
