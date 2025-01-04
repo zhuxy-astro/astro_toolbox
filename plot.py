@@ -125,7 +125,7 @@ def set_plot(special_suffix=''):
                           title=None,
                           filename=None, savedir=default_savedir,
                           ax=None, cbar_ax=None,
-                          plot_cbar=True,
+                          plot_cbar=True, cbar_args=None,
                           plot_bg=False,
                           proj=None,
                           legend=15,
@@ -143,7 +143,7 @@ def set_plot(special_suffix=''):
             filename=None,
             savedir=default_savedir,
             ax=None,  # if set, set as ax
-            plot_cbar=True,
+            plot_cbar=True, cbar_args=None,
             proj=None,  # could be 'aitoff' or 'polar'
             legend=12,  # 0: no legend, >0: legend fontsize
             cbar_ax=None,  # 'new': create a new cbar, 'existing': use the existing cbar, ax: use the ax as cbar
@@ -165,6 +165,8 @@ def set_plot(special_suffix=''):
 
             if plt_args is None:
                 plt_args = dict()
+            if cbar_args is None:
+                cbar_args = dict()
 
             if ax is None:
                 fig, ax = plt.subplots(
@@ -222,7 +224,7 @@ def set_plot(special_suffix=''):
                     cbar_ax, _ = mpl.colorbar.make_axes([ax for ax in fig.axes])
                 cbar = fig.colorbar(img, ax=ax, cax=cbar_ax)
                 img.set_clim(kwargs['z_left'], kwargs['z_right'])
-                cbar.set_label(kwargs['z_label'])
+                cbar.set_label(kwargs['z_label'], **cbar_args)
 
             if kwargs['x_line'] is not None:
                 ax.axvline(kwargs['x_line'], linewidth=2, alpha=0.5, c='g')
