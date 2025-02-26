@@ -3,6 +3,7 @@
 
 # %% import
 import sys
+from time import time
 
 
 # %% progress bar
@@ -25,7 +26,6 @@ def progress_bar(prog, scale):
     # 做一个手动的进度条，用于循环。
     # 适合for prog in range(scale)的环境
     # 但是print的过程对超大循环来说可能有点费时间。现在可用alive_bar替换。
-    from time import time
     if prog == 0:
         global start_time
         start_time = time()
@@ -33,7 +33,7 @@ def progress_bar(prog, scale):
     a = "▋" * (prog100 // 2)
     b = " " * (50 - prog100 // 2)
     dur = time() - start_time
-    print("\r{:^3.0f}%[{}{}]{:.2f}s".format(prog100, a, b, dur), end="")
+    print(f"\r{prog100:^3.0f}% ({prog + 1}/{scale})[{a}{b}] {dur:.2f}s", end="")
     sys.stdout.flush()
     if prog == scale - 1:
         print()

@@ -791,7 +791,7 @@ def bin_x(x, y=None, *, y_log=False,
           savedir=default_savedir, filename=None,
           **kwargs):
     """
-    If errorbar is not set, plot the filled area.
+    If plot_errorbar is False, plot the filled area. Even so, the line is still plotted by the errorbar function.
     kwargs: everything in calc.bin_x
     """
 
