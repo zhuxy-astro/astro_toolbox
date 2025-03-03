@@ -11,15 +11,20 @@ from time import time
 # using the astropy progress bar will partly mess up the output in multiprocessing
 """Usage:
 from misc import Bar
-with Bar(100) as bar:
-    for i in range(100):
+LENGTH = 100
+with Bar(LENGTH) as bar:
+    for i in range(LENGTH):
         bar()
+
+In Jupyter notebook, add `force_tty=True` if using alive_bar
+or `ipython_widget=True` if using astropy progress bar in the definition of Bar.
 """
+from astropy.utils.console import ProgressBar  # class
+
+
 try:
     from alive_progress import alive_bar as Bar  # func
 except ImportError:
-    from astropy.utils.console import ProgressBar  # class
-
     class Bar(ProgressBar):
         def __call__(self):
             return self.update()
