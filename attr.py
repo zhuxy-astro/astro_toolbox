@@ -53,8 +53,10 @@ def array2column(array: np.ndarray | Table,
                 name = array.name
             else:
                 name = 'col'
-
-    column = Column(array, name=name)
+    try:
+        column = Column(array, name=name)
+    except TypeError:
+        column = MaskedColumn(array, name=name)
     if meta_from is not None:
         column.meta.update(meta_from.meta)
 
