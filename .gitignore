@@ -1,5 +1,12 @@
 **/.DS_store
+
 **/tags
-**/.mypy_cache
+
 **/*.swp
+**/*.swo
+
 __pycache__/
+**/.mypy_cache
+*.pyc
+*.pyo
+

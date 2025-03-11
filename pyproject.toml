@@ -1,0 +1,23 @@
+[project]
+name = "astro_toolbox"
+version = "0.0.1"
+dependencies = [
+    "astropy",
+    "contourpy",
+    "h5py",
+    "matplotlib",
+    "numpy",
+    "pillow",
+    "requests",
+    "scipy",
+]
+
+[project.optional-dependencies]
+full = "alive-progress"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["astro_toolbox"]

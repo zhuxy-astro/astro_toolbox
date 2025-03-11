@@ -1,9 +1,0 @@
-alive-progress
-astropy
-contourpy
-h5py
-matplotlib
-numpy
-pillow
-requests
-scipy
