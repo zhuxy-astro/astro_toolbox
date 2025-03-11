@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+Notes:
+
+`plt_args` passed to the plotting function always have higher priority than the
+default values or the variables set in my own function.
+
+For functions of "outer" level which has `@set_plot` decorated function inside:
+    - `select` should not be set at the beginning of the function, but should be
+      set in the inner function, for `x = x[select]` will destroy the dimension
+      of `x` fed into the inner ones.
+    - Sometimes the filename should be set manually, except when the name from
+      the inner function is good enough.
+"""
 
 # %% import
 from functools import wraps
