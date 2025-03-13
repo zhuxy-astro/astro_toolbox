@@ -17,4 +17,4 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-full = "alive-progress"
+full = ["alive-progress"]
