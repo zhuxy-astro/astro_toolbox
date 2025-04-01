@@ -1060,11 +1060,12 @@ def one_to_one(x, y, *,
         if sigma_args is not None:
             default_sigma_args.update(sigma_args)
         sigma_args = default_sigma_args
-        ax_sigma.set_ylim(sigma_left, sigma_right)
         ax_sigma.plot(x_centers, sigma, **sigma_args)
         ax_sigma.plot([left, right], [0., 0.], 'r--', lw=2)
-        ax_sigma.set_ylabel(r'$\sigma$')
         ax_sigma.set_xlim(left, right)
+        ax_sigma.set_ylim(sigma_left, sigma_right,
+                          auto=sigma_left is None and sigma_right is None)
+        ax_sigma.set_ylabel(r'$\sigma$')
         ax_sigma.tick_params(axis="x", labelbottom=not plot_delta)
         if not plot_delta:
             ax_sigma.set_xlabel(kwargs['x_label'])
@@ -1078,10 +1079,11 @@ def one_to_one(x, y, *,
             default_delta_args.update(delta_args)
         delta_args = default_delta_args
         ax_delta.plot(x_centers, delta, **delta_args)
-        ax_delta.set_ylabel(r'$\Delta$')
         ax_delta.plot([left, right], [0., 0.], 'r--', lw=2)
         ax_delta.set_xlim(left, right)
-        ax_delta.set_ylim(delta_left, delta_right)
+        ax_delta.set_ylim(delta_left, delta_right,
+                          auto=delta_left is None and delta_right is None)
+        ax_delta.set_ylabel(r'$\Delta$')
         ax_delta.tick_params(axis="x", labelbottom=True)
         ax_delta.set_xlabel(kwargs['x_label'])
 
