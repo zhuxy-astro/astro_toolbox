@@ -68,6 +68,14 @@ default_savedir = 'figures'
 
 
 # %% func: set_title_save_fig
+def get_title(title, select=[]):
+    select_name = sel.combine_names(select)
+    if title is None and select_name != '' and title != '':
+        # Do not set title if it is empty
+        title = select_name
+    return title
+
+
 def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
                        special_suffix='', select=[],
                        filename=None, title=None,
@@ -110,9 +118,7 @@ def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
 
     filename = f'{filename}.{filetype}'
 
-    if title is None and select_name != '' and title != '':
-        # Do not set title if it is empty
-        title = select_name
+    title = get_title(title, select)
     ax.set_title(title, fontfamily='sans-serif', fontsize=16)
 
     if not os.path.exists(savedir):
@@ -988,7 +994,7 @@ def one_to_one(x, y, *,
                layout='constrained',
                plt_func=map_scatter,
                plt_args=None,
-               mode='median',
+               mode='mean',
                z_log=False,
                left=None, right=None,
                sigma_args=None, delta_args=None,
@@ -997,10 +1003,14 @@ def one_to_one(x, y, *,
                delta_left=None, delta_right=None,
                savedir=default_savedir, filename=None, title=None,
                **kwargs):
+    """When there are many identical values between x and y, using the median
+    mode will give zero median and percentiles.
+    """
 
     default_plt_args = dict(
         filename='',
         x_label='' if plot_delta or plot_sigma else None,
+        y_label=kwargs.get('y_label', ''),
         z_cmap='viridis',
         bins=[200, 200],
     )
@@ -1008,8 +1018,10 @@ def one_to_one(x, y, *,
         default_plt_args.update(plt_args)
     plt_args = default_plt_args
 
+    real_title = get_title(title, select)
+    has_title = real_title is not None and real_title != ''
     ax = kwargs.pop('ax', plt.subplots(
-        figsize=(5, 5 + plot_sigma + plot_delta), layout=layout)[1])
+        figsize=(5, 5 + plot_sigma + plot_delta + 0.5 * has_title), layout=layout)[1])
     ax.set(aspect=1)
     ax.tick_params(axis="x", labelbottom=False, labeltop=True)
 
