@@ -25,6 +25,7 @@ with Bar(LENGTH) as bar:
 
 
 # %% import
+import numpy as np
 import sys
 from time import time
 
@@ -120,3 +121,13 @@ elif has_astropy:
     Bar = ProgressBar
 else:
     Bar = MyBar
+
+
+# %% get_formats_dict
+def get_formats_dict(table, fmt='%.5g'):
+    is_float_list = [np.issubdtype(table.dtype[i], np.floating) for i in table.colnames]
+    formats_dict = {}
+    for is_float, colname in zip(is_float_list, table.colnames):
+        if is_float:
+            formats_dict[colname] = fmt
+    return formats_dict
