@@ -25,7 +25,6 @@ used only in axis labels, and can be mathematical.
 
 # %% import
 from functools import wraps
-# import copy
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -97,18 +96,6 @@ def array2column(array: np.ndarray | Table,
         table.meta.update(set_attrs)
         return table
     """
-
-
-# %% table cleaning
-def clean_table(t: Table):
-    """fill table with np.nan if it is masked and float
-    """
-    for name in t.colnames:
-        col_is_float = np.issubdtype(t.dtype[name], np.floating)
-        col_is_masked = isinstance(t[name], MaskedColumn)
-        if (col_is_float and col_is_masked):
-            t[name] = t[name].filled(np.nan)
-    return t
 
 
 # %% set and reset attr
