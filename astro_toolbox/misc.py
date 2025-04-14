@@ -1,7 +1,3 @@
-from . import bar
-Bar = bar.Bar
-
-
 def in_ipython():
     """Return value:
     0: Standard Python interpreter
@@ -23,6 +19,3 @@ def in_ipython():
     except NameError:
         # get_ipython not defined, so likely standard Python interpreter
         return 0
-
-
-is_in_ipython = in_ipython()

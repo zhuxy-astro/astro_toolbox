@@ -12,7 +12,7 @@ from astropy.table import Table
 import matplotlib.pyplot as plt
 from PIL import Image  # installed using pillow
 
-from .misc import Bar
+from .pbar import Bar
 
 
 # %% class Naming

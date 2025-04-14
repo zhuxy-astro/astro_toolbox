@@ -12,7 +12,7 @@ from scipy.spatial import KDTree
 from scipy.optimize import curve_fit as scipy_curve_fit
 from scipy import stats
 
-from . import attr, misc, sel
+from . import attr, pbar, sel
 
 
 # %% func: select good values
@@ -638,7 +638,7 @@ def bin_x(x, y, weights=None,
         value_in_bin_kwargs['weights'] = weights
 
     if bootstrap:
-        with misc.Bar(len(x_centers)) as bar:
+        with pbar.Bar(len(x_centers)) as bar:
             value_in_bin_kwargs['bootstrap'] = 4
             ress = [value_in_bin(ind, y, bar=bar, **value_in_bin_kwargs) for ind in index_in_bin]
 
@@ -763,7 +763,7 @@ def bin_map(x, y, z=None, weights=None, func=mean,
     weights to 3d arrays of shape (len(z), xbins, ybins), which is not really
     faster, uses more memory, and does not support more complicated functions.
     """
-    with misc.Bar(xbins * ybins) as bar:
+    with pbar.Bar(xbins * ybins) as bar:
         for i in range(xbins):
             for j in range(ybins):
                 index_in_xy_bin = index_in_x_bin[i] & index_in_y_bin[j]

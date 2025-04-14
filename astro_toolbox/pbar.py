@@ -16,7 +16,7 @@ parameters.
 
 Usage:
 
-from misc import Bar
+from pbar import Bar
 LENGTH = 100
 with Bar(LENGTH) as bar:
     for i in range(LENGTH):
@@ -40,7 +40,7 @@ try:
 except ImportError:
     has_alive_bar = False
 
-from . import misc
+from .misc import in_ipython
 
 
 # %% redefine ProgressBar
@@ -55,7 +55,7 @@ if has_astropy:
                     kwargs['ipython_widget'] = True
                 else:
                     # when nothing is set, automatically detect the environment
-                    kwargs['ipython_widget'] = misc.in_ipython() == 2
+                    kwargs['ipython_widget'] = in_ipython() == 2
             super().__init__(*args, **kwargs)
 
         def __call__(self):
