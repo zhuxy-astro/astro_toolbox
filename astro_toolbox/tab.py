@@ -5,9 +5,12 @@ import numpy as np
 
 # %% get_formats_dict
 def get_formats_dict(table, fmt='%.5g', exclude_cols=None):
-    formats_dict = dict()
     if exclude_cols is None:
-        exclude_cols = dict()
+        exclude_cols = list()
+    if isinstance(exclude_cols, str):
+        exclude_cols = [exclude_cols]
+
+    formats_dict = dict()
     for colname in table.colnames:
         if colname in exclude_cols:
             continue
