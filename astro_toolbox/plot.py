@@ -299,7 +299,9 @@ def img(ax, x_edges, y_edges, z, plt_args, **kwargs):
 def _calc_contour_levels(z, contour_levels, **kwargs):
     """
     contour_levels:
-        if int, it is the number of levels, i.e., the number of intervals;
+        if int, it is the number of levels, i.e., the number of intervals
+            between "left" and "right" (if there are outliers, there will be two
+            more intervals);
         if a float between 0 and 1, it is the percentile, and z is treated as normalized histogram. 15 levels is used;
         if a list of floats all between 0 and 1, it is the list of percentiles, with z treated as normalized histogram;
         if a list of floats not all between 0 and 1, it is the list of levels of z.

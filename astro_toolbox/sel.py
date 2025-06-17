@@ -39,6 +39,14 @@ def _status_of_list_of_selects(list_of_selects, reference=None):
     return 2
 
 
+def create_select_all(reference=None):
+    if reference is not None:
+        # TODO: reference may be masked!
+        return Column(np.ones(len(reference), dtype=bool), name='')
+    else:
+        return slice(None)  # note that no name is returned here
+
+
 def combine_names(list_of_selects, reference=None, list_status=None):
     """return the connection of names joined by ', '
     """
@@ -56,7 +64,7 @@ def combine_names(list_of_selects, reference=None, list_status=None):
 
     name_list = []
     for s in list_of_selects:
-        if hasattr(s, 'name'):
+        if hasattr(s, 'name') and s.name != '':
             name_list += [s.name]
     name_combined = ', '.join(name_list)
 
@@ -77,11 +85,7 @@ def combine(list_of_selects, reference=None):
     list_status = _status_of_list_of_selects(list_of_selects, reference)
 
     if list_status == 0:
-        if reference is not None:
-            # TODO: reference may be masked!
-            return Column(np.ones(len(reference), dtype=bool), name='')
-        else:
-            return slice(None)  # note that no name is returned here
+        return create_select_all(reference)
 
     elif list_status == 1:
         return attr.array2column(list_of_selects)
@@ -96,6 +100,31 @@ def combine(list_of_selects, reference=None):
     name_combined = combine_names(list_of_selects, reference, list_status)
 
     return attr.array2column(select_result, name=name_combined)
+
+
+# %% cross selections
+def cross(list_of_list_of_selects, base=None):
+    if base is None:
+        cross_selections = [create_select_all(base)]
+    else:
+        base = base.copy()
+        base.name = ''
+        cross_selections = [base]
+    # for each dimension
+    for i, list_of_selects in enumerate(list_of_list_of_selects):
+        list_status = _status_of_list_of_selects(
+            list_of_selects, reference=cross_selections[0])
+        if list_status == 1:
+            list_of_selects = [list_of_selects]
+
+        cross_selections_last_round = cross_selections
+        cross_selections = []
+        # for each selection in the dimension
+        for j, new_selection in enumerate(list_of_selects):
+            for accumulated_selection in cross_selections_last_round:
+                cross_selections.append(combine([
+                    accumulated_selection, new_selection], reference=base))
+    return cross_selections
 
 
 # %% select good

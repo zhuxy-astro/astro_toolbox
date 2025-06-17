@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # %% import
+from functools import wraps
 import sys
 
 import numpy as np
@@ -78,7 +79,7 @@ def mean(data, weights=None):
 def std(data, weights=None, ddof=1):
     np_data, np_weights = good_data_weights(data, weights)
     if weights_is_none(np_weights):
-        return np.std(np_data, ddof=ddof)
+        return np.nanstd(np_data, ddof=ddof)
     average = mean(np_data, weights=np_weights)
     variance = mean((np_data - average)**2, weights=np_weights)
     if ddof == 0:
@@ -110,6 +111,49 @@ def meanerr(data, weights=None):
     return sigma * np.sqrt(sum(np_weights**2)) / sum(np_weights)
 
 
+# %% dex calculation
+def dexcalc(func):
+    @wraps(func)
+    def wrapped(data, weights=None, *args, **kwargs):
+        if data is None:
+            return func(data, weights=weights, *args, **kwargs)
+        try:
+            linear_data = np.power(10, data)
+        except Exception:
+            raise ValueError(f"Cannot do 10 ** {data}.")
+        linear_result = func(linear_data, weights=weights, *args, **kwargs)
+        return np.log10(linear_result)
+
+    return wrapped
+
+
+@dexcalc
+def dexsum(linear_data, weights=None):
+    return sum(linear_data, weights=weights)
+
+
+@dexcalc
+def dexmean(linear_data, weights=None):
+    return mean(linear_data, weights=weights)
+
+
+@dexcalc
+def dexstd(linear_data, weights=None, ddof=1):
+    linear_mean = mean(linear_data, weights=weights)
+    linear_std = std(linear_data, weights=weights, ddof=ddof)
+    dex_std = np.log10(linear_mean + linear_std) - np.log10(linear_mean)
+    return 10 ** dex_std  # feed the dexcalc wrapper
+
+
+@dexcalc
+def dexmeanerr(linear_data, weights=None):
+    linear_mean = mean(linear_data, weights=weights)
+    linear_meanerr = meanerr(linear_data, weights=weights)
+    dex_meanerr = np.log10(linear_mean + linear_meanerr) - np.log10(linear_mean)
+    return 10 ** dex_meanerr  # feed the dexcalc wrapper
+
+
+# %% func: fraction_err
 def fraction_err(x, y, x_err=None, y_err=None):
     """calculate the error of the fraction x/y
     If x_err and y_err are not set, Poisson error is used.
@@ -598,7 +642,7 @@ def bin_x(x, y, weights=None,
           at_least=1,
           **kwargs):
     """
-    `mode` could be 'mean', 'meanerr' or 'median'. Overwritten by `func` and `errfunc`.
+    `mode` could be 'mean', 'meanerr', 'dexmean', 'dexmeanerr' or 'median'. Overwritten by `func` and `errfunc`.
     When mode is 'median', median_percentile is used to calculate the errors.
     `func` and `errfunc` should be functions that take 1-d array (may with a `weights` array) and return a number.
     bootstrap: 0: no bootstrap; 1: mean and confidence interval; 2: mean and std.
@@ -624,6 +668,10 @@ def bin_x(x, y, weights=None,
             func = mean
         elif mode == 'median':
             func = median
+        elif mode in ['dexmean', 'dexmeanerr']:
+            func = dexmean
+        else:
+            raise ValueError(f"Unknown mode: {mode}. Please set `func` or `errfunc`.")
     if errfunc is None:
         if mode == 'mean':
             errfunc = std
@@ -632,6 +680,10 @@ def bin_x(x, y, weights=None,
         elif mode == 'median':
             from functools import partial
             errfunc = partial(weighted_percentile, percentile=np.sort(median_percentile))
+        elif mode == 'dexmean':
+            errfunc = dexstd
+        elif mode == 'dexmeanerr':
+            errfunc = dexmeanerr
 
     value_in_bin_kwargs = dict(func=func, at_least=at_least)
     if weights is not None:
