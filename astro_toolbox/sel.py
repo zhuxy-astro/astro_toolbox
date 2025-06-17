@@ -104,6 +104,9 @@ def combine(list_of_selects, reference=None):
 
 # %% cross selections
 def cross(list_of_list_of_selects, base=None):
+    """Based on the base selection, cross select many criteria like
+    bimodality × M* selection. Each list_of_selects is a new dimension.
+    """
     if base is None:
         cross_selections = [create_select_all(base)]
     else:
@@ -111,16 +114,18 @@ def cross(list_of_list_of_selects, base=None):
         base.name = ''
         cross_selections = [base]
     # for each dimension
-    for i, list_of_selects in enumerate(list_of_list_of_selects):
+    for list_of_selects in list_of_list_of_selects:
         list_status = _status_of_list_of_selects(
             list_of_selects, reference=cross_selections[0])
         if list_status == 1:
             list_of_selects = [list_of_selects]
 
+        # in each round, expand each selection in the last round to the number of
+        # selections in the new dimension
         cross_selections_last_round = cross_selections
         cross_selections = []
         # for each selection in the dimension
-        for j, new_selection in enumerate(list_of_selects):
+        for new_selection in list_of_selects:
             for accumulated_selection in cross_selections_last_round:
                 cross_selections.append(combine([
                     accumulated_selection, new_selection], reference=base))
