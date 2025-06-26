@@ -78,8 +78,8 @@ def get_title(title, select=[]):
 
 def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
                        special_suffix='', select=[],
-                       filename=None, title=None,
-                       filetype='pdf'
+                       title=None, titlefont=15,
+                       filename=None, filetype='pdf'
                        ):
     """
     save file as 'figures/X-Y-Z-{special_suffix}, {title}.{filetype}' by default.
@@ -96,6 +96,9 @@ def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
 
     special_suffix is usually used for different plot styles, for example 'contour'.
     """
+    title = get_title(title, select)
+    ax.set_title(title, fontfamily='sans-serif', fontsize=titlefont)
+
     if filename == '':
         return
 
@@ -117,9 +120,6 @@ def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
     # else, use the overwritten filename
 
     filename = f'{filename}.{filetype}'
-
-    title = get_title(title, select)
-    ax.set_title(title, fontfamily='sans-serif', fontsize=16)
 
     if not os.path.exists(savedir):
         os.mkdir(savedir)
@@ -147,7 +147,8 @@ def set_plot(special_suffix=''):
                           plot_cbar=True, cbar_args=None,
                           plot_bg=False,
                           proj=None,
-                          legend=15,
+                          legendfont=15,
+                          titlefont=15,
                           layout='constrained',
                           **kwargs):
             """
@@ -164,7 +165,8 @@ def set_plot(special_suffix=''):
             ax=None,  # if set, set as ax
             plot_cbar=True, cbar_args=None,
             proj=None,  # could be 'aitoff' or 'polar'
-            legend=12,  # 0: no legend, >0: legend fontsize
+            legendfont=15,  # 0: no legend, >0: legend fontsize
+            titlefont=15,  # fontsize of the title
             cbar_ax=None,  # 'new': create a new cbar, 'existing': use the existing cbar, ax: use the ax as cbar
 
             In kwargs:
@@ -253,12 +255,13 @@ def set_plot(special_suffix=''):
             if plot_bg:
                 ax.set_facecolor('silver')
 
-            if legend and len(ax.get_legend_handles_labels()[0]) > 0:
-                ax.legend(fontsize=legend)
+            if legendfont and len(ax.get_legend_handles_labels()[0]) > 0:
+                ax.legend(fontsize=legendfont)
 
             set_title_save_fig(ax=ax, x=x, y=y, z=z, title=title,
                                savedir=savedir, special_suffix=special_suffix,
-                               select=select, filename=filename)
+                               select=select, filename=filename,
+                               titlefont=titlefont)
 
             fig.show()
             return ax
@@ -532,7 +535,7 @@ def hexbin(ax, x, y, z=None, select=slice(None),
 
 # %% func: bin_map
 def bin_map(x, y, z=None, *,
-            select=slice(None), title=None,
+            select=slice(None), title=None, titlefont=15,
             plot_contour=1, plot_img=1,
             at_least=1, fill_nan=True,
             z_log=False,
@@ -630,7 +633,7 @@ def bin_map(x, y, z=None, *,
             ax = _contour(x_edges, y_edges, hist_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
                           filename='', plt_args=contour_args, select=select, **kwargs)
 
-    set_title_save_fig(ax=ax, x=x, y=y, z=z, title=title,
+    set_title_save_fig(ax=ax, x=x, y=y, z=z, title=title, titlefont=titlefont,
                        savedir=savedir, special_suffix='map', select=select, filename=filename)
 
     return ax
@@ -650,7 +653,7 @@ def contour_scatter(x, y, *,
                     plot_scatter=True,
                     plot_contour=True,
                     plot_contourf=True,
-                    savedir=default_savedir, filename=None, title=None,
+                    savedir=default_savedir, filename=None, title=None, titlefont=15,
                     **kwargs):
     """
     `plt.contour` is not good at dealing with sharp edges.
@@ -706,7 +709,7 @@ def contour_scatter(x, y, *,
             filename='',
             **kwargs)
 
-    set_title_save_fig(ax=ax, x=x, y=y, title=title,
+    set_title_save_fig(ax=ax, x=x, y=y, title=title, titlefont=titlefont,
                        savedir=savedir, special_suffix='cnt_sct', select=select, filename=filename)
 
     return ax
@@ -723,7 +726,7 @@ def _bar(ax, x, y, plt_args, y_log=False, **kwargs):
 
 
 def hist(x, *,
-         select=slice(None), title=None,
+         select=slice(None), title=None, titlefont=15,
          y_log=False,
          plot_errorbar=True,
          bar_args=None,
@@ -777,7 +780,7 @@ def hist(x, *,
                       filename='',
                       **kwargs)
 
-    set_title_save_fig(ax=ax, x=x, title=title,
+    set_title_save_fig(ax=ax, x=x, title=title, titlefont=titlefont,
                        savedir=savedir, special_suffix='hist', select=select, filename=filename)
 
     return ax
@@ -805,7 +808,7 @@ def errorbar(ax, x_centers, y_means, y_err=None,
 
 def bin_x(x, y=None, *, y_log=False,
           mode='mean', bootstrap=0,
-          select=slice(None), title=None,
+          select=slice(None), title=None, titlefont=15,
           at_least=1,
           plot_scatter=False, plot_errorbar=True, plot_fill=True,
           errorbar_args=None, scatter_args=None, fill_args=None,
@@ -856,8 +859,9 @@ def bin_x(x, y=None, *, y_log=False,
                      filename='',
                      **kwargs)
 
-    set_title_save_fig(ax=ax, x=x, y=y, title=title,
-                       savedir=savedir, special_suffix='bin_x', select=select, filename=filename)
+    set_title_save_fig(
+        ax=ax, x=x, y=y, title=title, titlefont=titlefont, filetype='pdf',
+        savedir=savedir, special_suffix='bin_x', select=select, filename=filename)
 
     return ax
 
@@ -932,7 +936,8 @@ def map_scatter(x, y, z=None,
                 plt_args=None,
                 plot_cbar=True,
                 plot_hist=False, hist_args=None,
-                savedir=default_savedir, filename=None, title=None,
+                savedir=default_savedir, filename=None,
+                title=None, titlefont=15,
                 **kwargs):
     """note that the color of the scatter of the outliers will be affected by neighbouring points when z is set.
     `extrapolate` is used for points outside the edge of "bin centers" in the histogram
@@ -979,7 +984,7 @@ def map_scatter(x, y, z=None,
     scatter(x[select], y[select], z_map_scatter,
             filename='', plt_args=plt_args, plot_cbar=plot_cbar, ax=ax, **kwargs)
 
-    set_title_save_fig(ax=ax, x=x, y=y, z=z, title=title,
+    set_title_save_fig(ax=ax, x=x, y=y, z=z, title=title, titlefont=titlefont,
                        savedir=savedir, special_suffix='map_scatter', select=select, filename=filename)
 
     return ax
@@ -1003,7 +1008,7 @@ def one_to_one(x, y, *,
                plot_sigma=True, plot_delta=True,
                sigma_left=None, sigma_right=None,
                delta_left=None, delta_right=None,
-               savedir=default_savedir, filename=None, title=None,
+               savedir=default_savedir, filename=None, title=None, titlefont=15,
                **kwargs):
     """When there are many identical values between x and y, using the median
     mode will give zero median and percentiles.
@@ -1089,7 +1094,7 @@ def one_to_one(x, y, *,
         ax_delta.tick_params(axis="x", labelbottom=True)
         ax_delta.set_xlabel(kwargs['x_label'])
 
-    set_title_save_fig(ax=ax, x=x, y=y, title=title,
+    set_title_save_fig(ax=ax, x=x, y=y, title=title, titlefont=titlefont,
                        savedir=savedir, special_suffix='1to1', select=select, filename=filename)
 
     return ax
