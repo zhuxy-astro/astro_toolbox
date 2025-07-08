@@ -102,34 +102,35 @@ def combine(list_of_selects, reference=None):
     return attr.array2column(select_result, name=name_combined)
 
 
-# %% cross selections
-def cross(list_of_list_of_selects, base=None):
-    """Based on the base selection, cross select many criteria like
-    bimodality × M* selection. Each list_of_selects is a new dimension.
+# %% mesh selections
+def mesh(list_of_list_of_selects, base=None):
+    """Based on the base selection, combine many series of selections in a mesh
+    grid, for example for bimodality × M* selection. Each list_of_selects adds a
+    new dimension.
     """
     if base is None:
-        cross_selections = [create_select_all(base)]
+        mesh_selections = [create_select_all(base)]
     else:
         base = base.copy()
         base.name = ''
-        cross_selections = [base]
+        mesh_selections = [base]
     # for each dimension
     for list_of_selects in list_of_list_of_selects:
         list_status = _status_of_list_of_selects(
-            list_of_selects, reference=cross_selections[0])
+            list_of_selects, reference=mesh_selections[0])
         if list_status == 1:
             list_of_selects = [list_of_selects]
 
         # in each round, expand each selection in the last round to the number of
         # selections in the new dimension
-        cross_selections_last_round = cross_selections
-        cross_selections = []
+        mesh_selections_last_round = mesh_selections
+        mesh_selections = []
         # for each selection in the dimension
         for new_selection in list_of_selects:
-            for accumulated_selection in cross_selections_last_round:
-                cross_selections.append(combine([
+            for accumulated_selection in mesh_selections_last_round:
+                mesh_selections.append(combine([
                     accumulated_selection, new_selection], reference=base))
-    return cross_selections
+    return mesh_selections
 
 
 # %% select good

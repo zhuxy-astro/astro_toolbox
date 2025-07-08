@@ -545,6 +545,7 @@ def bin_map(x, y, z=None, *,
             plot_contourf=False,
             plot_cbar=True,
             plot_contour_cbar=False,
+            calc_out=None,
             savedir=default_savedir, filename=None,
             **kwargs):
     """
@@ -569,6 +570,7 @@ def bin_map(x, y, z=None, *,
     plot_img=1,  # 0: no img, 1: img of z, 2: img of histogram
     contour_levels and plot_contourf is passed to plot._contour when plot_contour is set.
     fill_nan: if True, fill the nan values with at_least. Works only when z is None.
+    calc_out: None or an empty dictionary to store the output of calc.bin_map.
 
     In kwargs:
         everything of calc.bin_map, img and _contour
@@ -629,9 +631,13 @@ def bin_map(x, y, z=None, *,
             ax = _contour(x_edges, y_edges, z_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
                           plot_cbar=plot_contour_cbar, filename='', plt_args=contour_args, select=select, **kwargs)
         elif plot_contour == 2:
-            hist_map, x_edges, y_edges = calc.bin_map(x, y, **kwargs)
-            ax = _contour(x_edges, y_edges, hist_map, contour_levels=contour_levels, plot_contourf=plot_contourf,
+            hist_map, x_edges_hist, y_edges_hist = calc.bin_map(x, y, **kwargs)
+            ax = _contour(x_edges_hist, y_edges_hist, hist_map,
+                          contour_levels=contour_levels, plot_contourf=plot_contourf,
                           filename='', plt_args=contour_args, select=select, **kwargs)
+
+    if calc_out is not None and hasattr(calc_out, 'update'):
+        calc_out.update(x_edges=x_edges, y_edges=y_edges, z_map=z_map)
 
     set_title_save_fig(ax=ax, x=x, y=y, z=z, title=title, titlefont=titlefont,
                        savedir=savedir, special_suffix='map', select=select, filename=filename)
@@ -653,6 +659,7 @@ def contour_scatter(x, y, *,
                     plot_scatter=True,
                     plot_contour=True,
                     plot_contourf=True,
+                    calc_out=None,
                     savedir=default_savedir, filename=None, title=None, titlefont=15,
                     **kwargs):
     """
@@ -671,6 +678,9 @@ def contour_scatter(x, y, *,
     z_map /= calc.sum(z_map)
     x_edges = attr.array2column(x_edges, meta_from=x)
     y_edges = attr.array2column(y_edges, meta_from=y)
+
+    if calc_out is not None and hasattr(calc_out, 'update'):
+        calc_out.update(x_edges=x_edges, y_edges=y_edges, z_map=z_map)
 
     if plot_scatter:
         default_scatter_args = dict(
@@ -731,6 +741,7 @@ def hist(x, *,
          plot_errorbar=True,
          bar_args=None,
          errorbar_args=None,
+         calc_out=None,
          savedir=default_savedir, filename=None,
          **kwargs):
     """
@@ -780,6 +791,11 @@ def hist(x, *,
                       filename='',
                       **kwargs)
 
+    if calc_out is not None and hasattr(calc_out, 'update'):
+        calc_out.update(
+            x_center=x_center, h=h, h_err=h_err,
+        )
+
     set_title_save_fig(ax=ax, x=x, title=title, titlefont=titlefont,
                        savedir=savedir, special_suffix='hist', select=select, filename=filename)
 
@@ -812,6 +828,7 @@ def bin_x(x, y=None, *, y_log=False,
           at_least=1,
           plot_scatter=False, plot_errorbar=True, plot_fill=True,
           errorbar_args=None, scatter_args=None, fill_args=None,
+          calc_out=None,
           savedir=default_savedir, filename=None,
           **kwargs):
     """
@@ -827,6 +844,9 @@ def bin_x(x, y=None, *, y_log=False,
     ys = attr.array2column(ys, meta_from=y)
 
     x_centers = attr.array2column(x_centers, meta_from=x)
+
+    if calc_out is not None and hasattr(calc_out, 'update'):
+        calc_out.update(x_centers=x_centers, ys=ys, y_err=y_err)
 
     if errorbar_args is None:
         errorbar_args = dict()
@@ -870,6 +890,7 @@ def bin_x(x, y=None, *, y_log=False,
 @set_plot(special_suffix='loess')
 def loess(ax, x, y, z, plt_args=None, plot_border=True,
           select=slice(None),
+          calc_out=None,
           **kwargs):
     select = sel.combine(select, reference=x)
     for i in [x, y, z]:
@@ -886,6 +907,9 @@ def loess(ax, x, y, z, plt_args=None, plot_border=True,
         # written by Capperllari, super slow for large set of data!
         from loess import loess_2d
         zout, wout = loess_2d.loess_2d(x_use, y_use, z_use)  # , npoints=30)
+
+    if calc_out is not None and hasattr(calc_out, 'update'):
+        calc_out.update(x_use=x_use, y_use=y_use, zout=zout)
 
     default_plt_args = dict(
         s=80,
@@ -938,6 +962,7 @@ def map_scatter(x, y, z=None,
                 plot_hist=False, hist_args=None,
                 savedir=default_savedir, filename=None,
                 title=None, titlefont=15,
+                calc_out=None,
                 **kwargs):
     """note that the color of the scatter of the outliers will be affected by neighbouring points when z is set.
     `extrapolate` is used for points outside the edge of "bin centers" in the histogram
@@ -966,6 +991,11 @@ def map_scatter(x, y, z=None,
             attr.set(z_map, label='counts')
         else:
             attr.set(z_map, label='weighted counts')
+
+    if calc_out is not None and hasattr(calc_out, 'update'):
+        calc_out.update(
+            z_map=z_map, x_edges=x_edges, y_edges=y_edges,
+            x_centers=x_centers, y_centers=y_centers)
 
     if extrapolate:
         fill_value = None
@@ -1009,6 +1039,7 @@ def one_to_one(x, y, *,
                sigma_left=None, sigma_right=None,
                delta_left=None, delta_right=None,
                savedir=default_savedir, filename=None, title=None, titlefont=15,
+               calc_out=None,
                **kwargs):
     """When there are many identical values between x and y, using the median
     mode will give zero median and percentiles.
@@ -1056,6 +1087,8 @@ def one_to_one(x, y, *,
     if plot_sigma or plot_delta:
         delta, sigma, x_centers = calc.bin_x(
             x, y - x, select=select, weights=weights, mode=mode, **kwargs)
+        if calc_out is not None and hasattr(calc_out, 'update'):
+            calc_out.update(x_centers=x_centers, delta=delta, sigma=sigma)
         if mode == 'median':
             sigma = sigma[1] + sigma[0]
 
