@@ -5,6 +5,12 @@ import numpy as np
 
 # %% get_formats_dict
 def get_formats_dict(table, fmt='%.5g', exclude_cols=None):
+    """Usage:
+    t.write(filename, overwrite=True,
+            formats=tab.get_formats_dict(
+                t, exclude_cols=['subhalo_id', 'other_non_float_column']))
+    Doesn't work with ecsv tables.
+    """
     if exclude_cols is None:
         exclude_cols = list()
     if isinstance(exclude_cols, str):
