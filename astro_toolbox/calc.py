@@ -429,7 +429,11 @@ def weighted_percentile(data=None, weights=None,
 
     # when weights is not set, calculate the percentiles directly
     if weights is None:
-        return np.nanpercentile(good_values(data), np.array(percentile) * 100.)
+        data = good_values(data)
+        # If no good data, use one nan to make np.nanquantile return the same dim as percentile
+        if len(data) == 0:
+            data = np.array([np.nan])
+        return np.nanquantile(data, np.array(percentile))
     else:
         weights = weights.copy()
 
