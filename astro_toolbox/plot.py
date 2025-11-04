@@ -83,6 +83,9 @@ def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
                        ):
     """
     save file as 'figures/X-Y-Z-{special_suffix}, {title}.{filetype}' by default.
+    This is used by plotting functions not decorated by set_plot.
+    Requirement for the definition of funcs using this func:
+        select=slice(None), savedir=default_savedir, filename=None
 
     x, y, z: Columns or str.
 
@@ -90,9 +93,6 @@ def set_title_save_fig(ax, x, y=None, z=None, savedir=default_savedir,
         only used as title above the axis, not in the filename
 
     If filename is set to '', no file will be saved.
-    Used by plotting functions not decorated by set_plot.
-    Requirement for the definition of funcs using this func:
-        select=slice(None), savedir=default_savedir, filename=None
 
     special_suffix is usually used for different plot styles, for example 'contour'.
     """
