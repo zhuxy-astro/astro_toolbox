@@ -23,10 +23,13 @@ def _status_of_list_of_selects(list_of_selects, reference=None):
     list_of_selects_is_empty = (
         list_of_selects_is_empty
         or (list_of_selects is None)
-        or (len(list_of_selects) == 0))
+        or (hasattr(list_of_selects, '__len__') and (len(list_of_selects) == 0)))
 
     if list_of_selects_is_empty:
         return 0
+
+    if isinstance(list_of_selects, slice):
+        return 1
 
     if reference is not None:
         list_of_selects_is_single = len(list_of_selects) == len(reference)
@@ -133,9 +136,39 @@ def mesh(list_of_list_of_selects, base=None):
     return mesh_selections
 
 
+# %% func: get name and label
+def _get_name_label(data, name_default=None, label_default=None):
+    """return name and label for data
+    If label_default is None and none is found in data, label = name
+    If name_default is None and none is found in data, name = 'x'
+    In data, try to retrieve name from data.name, and label from data.meta['label']
+    """
+    if name_default is None:
+        if hasattr(data, 'name'):
+            name = data.name
+        else:
+            name = 'x'
+    else:
+        name = name_default
+
+    if label_default is None:
+        if hasattr(data, 'meta'):
+            label = data.meta.get('label', None)
+        else:
+            label = None
+    else:
+        label = label_default
+
+    if label is None:  # still None
+        label = name
+
+    return name, label
+
+
 # %% select good
 def good(array):
-    # returns an array of bools indicating whether the values are not masked, not nan and not infinite.
+    """Returns a column of bools indicating whether the values are not masked, not nan and not infinite.
+    """
     if hasattr(array, 'copy'):
         # I don't know why but this function will change the original array without copying.
         array = array.copy()
@@ -146,11 +179,23 @@ def good(array):
         mask = None
     if mask is None:
         mask = np.zeros_like(array, dtype=bool)
+
     try:
         mask |= ~np.isfinite(array)
     except TypeError:
         pass
-    return ~mask
+
+    to_return = ~mask
+
+    # get name only
+    name, _ = _get_name_label(array, name_default='col')
+    to_return = attr.array2column(
+        to_return,
+        name=f'good_{name}',
+        label=f'Good {name}'
+    )
+
+    return to_return
 
 
 # %% func: select range_ and select value_edges
@@ -158,16 +203,7 @@ def range_(data, left=None, right=None,
            name=None, label=None):
     """return a select array cut by one edge or two edges
     """
-    if name is None:
-        if hasattr(data, 'name'):
-            name = data.name
-        else:
-            name = 'x'
-    if label is None:
-        if hasattr(data, 'meta'):
-            label = data.meta.get('label', None)
-    if label is None:  # still None
-        label = name
+    name, label = _get_name_label(data, name, label)
 
     le = '<='
     le_math = r'\leq'
