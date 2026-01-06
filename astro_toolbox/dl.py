@@ -394,13 +394,17 @@ class DESIImg(_SurveyBase):
                                        )
 
     @staticmethod
-    def get_url(table_row, layer='ls-dr9', bands='grz', pixscale=0.2, size=200):
+    def get_url(table_row, layer='ls-dr9', pixscale=0.2, size=200, bands=None):
         """
-        example:
+        Parameters:
+        bands: 'grz'
+        layer: 'unwise-neo7'
         """
         ra = table_row['ra']
         dec = table_row['dec']
         url = (
             "https://www.legacysurvey.org/viewer/cutout.jpg?"
-            f"ra={ra}&dec={dec}&layer={layer}&pixscale={pixscale}&bands={bands}&size={size}")
+            + f"ra={ra}&dec={dec}&layer={layer}&pixscale={pixscale}&size={size}"
+            + f"&bands={bands}" if bands is not None else ""
+        )
         return url
