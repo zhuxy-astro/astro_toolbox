@@ -51,15 +51,17 @@ class _SurveyBase:
 
     Usage:
     - Download one image and show in plt:
-        `dl.SDSSImg.show_fig(table_row, timeout=None, naming_seq=None)`
-        For a one-liner, use `dl.SDSSImg.show_fig(Table([[35.7], [-4.9]], names=['ra', 'dec'])[0])`
+        `dl.SDSSImg.show_fig(table_row, timeout=None, naming_seq=None, url_kwargs=dict(dr='dr17'))`
+        For a one-liner, use `dl.SDSSImg.show_fig(Table([[35.7], [-4.9]], names=['ra', 'dec'])[0], url_kwargs=dict(dr='dr17'))`
+    - Get the image as a PIL image object:
+        `img = dl.SDSSImg.fig_img(table_row, timeout=None, url_kwargs=dict(dr='dr17'))`
     - Get the url for one image:
         `dl.SDSSImg.get_url(table_row, dr='dr17', scale=0.2, length=200, opt='')`
     - Download multiple images:
         ```
         failed_table, invalid_table = dl.SDSSImg(table).get_figs(
             savedir='img', overwrite=False, naming_seq=None, suffix='',
-            try_loops=3, timeout=None)
+            try_loops=3, timeout=None, url_kwargs=dict(dr='dr17'))
         ```
     If another naming sequence is needed, use it in the function arg like
     `naming_seq=dl.SDSSImg.naming_seq`
@@ -167,13 +169,15 @@ class _SurveyBase:
         raise NotImplementedError
 
     @classmethod
-    def _get_response(cls, table_row, timeout=None):
+    def _get_response(cls, table_row, timeout=None, url_kwargs=None):
         """this is called by show_fig, which is a class method. Therefore this is a class method, too.
         The reason not to make it static is that it has to read the timeout, which may differ between surveys.
         """
         if timeout is None:
             timeout = cls._timeout
-        url = cls.get_url(table_row)
+        if url_kwargs is None:
+            url_kwargs = dict()
+        url = cls.get_url(table_row, **url_kwargs)
         response = requests.get(url, stream=True, timeout=timeout)
         response.raise_for_status()
         return response
@@ -189,19 +193,19 @@ class _SurveyBase:
         return img
 
     @classmethod
-    def fig_img(cls, table_row, timeout=None):
+    def fig_img(cls, table_row, timeout=None, url_kwargs=None):
         """return the image as a PIL image object, which can be shown in plt.imshow(img)
         Setting of table is not necessary when using this function.
         """
-        response = cls._get_response(table_row, timeout=timeout)
+        response = cls._get_response(table_row, timeout=timeout, url_kwargs=url_kwargs)
         img = cls.validate_img(response)
         return img
 
     @classmethod
-    def show_fig(cls, table_row, timeout=None, naming_seq=None):
+    def show_fig(cls, table_row, timeout=None, naming_seq=None, url_kwargs=None):
         """show the image in plt
         """
-        img = cls.fig_img(table_row, timeout=timeout)
+        img = cls.fig_img(table_row, timeout=timeout, url_kwargs=url_kwargs)
 
         if naming_seq is None:
             naming_seq = cls.naming_seq
@@ -218,7 +222,7 @@ class _SurveyBase:
         self, table_row, failed_table, invalid_table,
         save_in_list,
         savedir, naming_seq, suffix,
-        overwrite, timeout, bar,
+        overwrite, timeout, bar, url_kwargs
     ):
         """download and write one image
         putting try inside this function can avoid error raising in multitasking
@@ -241,7 +245,7 @@ class _SurveyBase:
 
         # TODO: sometimes rows may fail but not in the list
         try:
-            response = self._get_response(table_row, timeout=timeout)
+            response = self._get_response(table_row, timeout=timeout, url_kwargs=url_kwargs)
             # _ = self.validate_img(response)  # checking validation using PIL causes error
             # it might be possible to check if the image is empty, but as SDSS
             # images have words on empty images, it is not easy to check.
@@ -277,7 +281,8 @@ class _SurveyBase:
     def get_figs(self,
                  save_in_list=None,
                  savedir='img', overwrite=False, naming_seq=None, suffix='',
-                 try_loops=3, timeout=None):
+                 try_loops=3, timeout=None, url_kwargs=None
+                 ):
         """if naming_seq is None, use the default naming sequence for this survey
         `suffix` is before the extension but after the naming sequence.
         if `save_in_list` is not None, it should be a list where the images will be saved, and no file will be written.
@@ -307,7 +312,7 @@ class _SurveyBase:
                     savedir=savedir, naming_seq=naming_seq, suffix=suffix,
                     save_in_list=save_in_list,
                     overwrite=overwrite, timeout=timeout,
-                    bar=bar,
+                    bar=bar, url_kwargs=url_kwargs,
                 )
 
         print(f'Done. {len(failed_table)} items failed, {len(invalid_table)} items invalid.')
