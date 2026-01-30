@@ -42,7 +42,7 @@ def table2array(table):
     if isinstance(table, Table):
         return structured_to_unstructured(table.as_array())
     else:
-        return np.array(table)
+        return np.asarray(table)
 
 
 def array2column(array: np.ndarray | Table,
@@ -63,7 +63,7 @@ def array2column(array: np.ndarray | Table,
         # avoid the index mixing from Table(list)
         array = table2array(array)
     elif not isinstance(array, np.ndarray):
-        array = np.array(array)
+        array = np.asarray(array)
 
     if not isinstance(meta_from, (Table, Column)):
         meta_from = None

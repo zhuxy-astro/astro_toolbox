@@ -24,11 +24,11 @@ def good_data_weights(data=None, weights=None):
         good_ind = np.ones_like(weights, dtype=bool)
     else:
         good_ind = sel.good(data)
-        np_data = np.array(data)  # avoid changing the original array
+        np_data = np.asarray(data).copy()  # avoid changing the original array
         if weights is None:
             return np_data[good_ind], None
 
-    np_weights = np.array(weights)  # avoid changing the original array
+    np_weights = np.asarray(weights).copy()  # avoid changing the original array
     np_data, np_weights = np_data.flatten(), np_weights.flatten()
     assert np.shape(np_data) == np.shape(np_weights), \
         'The shape of data and weights does not match!'
@@ -49,7 +49,7 @@ def weights_is_none(weights):
 
 def good_values(array):
     good_ind = sel.good(array)
-    np_array = np.array(array)  # avoid changing the original array
+    np_array = np.asarray(array).copy()  # avoid changing the original array
     return np_array[good_ind]
 
 
@@ -383,8 +383,8 @@ def fraction(array, select=slice(None), weights=None, print_info=False):
     """
     # combine `select` when it is a list, and save `select` from slice(None)
     select = sel.combine(select, reference=array)
-    select = np.array(select, dtype=bool)
-    array = np.array(array, dtype=bool)
+    select = np.asarray(select, dtype=bool)
+    array = np.asarray(array, dtype=bool)
     select = select & sel.good(array)
 
     if weights is None:
@@ -419,7 +419,7 @@ def weighted_percentile(data=None, weights=None,
     # when calculating the percentile in a histogram, only the weights are given.
     data_is_none = data is None
     if data_is_none:
-        data = np.arange(np.array(weights).size)
+        data = np.arange(np.asarray(weights).size)
     else:
         data = data.copy()
 
@@ -432,8 +432,8 @@ def weighted_percentile(data=None, weights=None,
         data = good_values(data)
         # If no good data, use one nan to make np.nanquantile return the same dim as percentile
         if len(data) == 0:
-            data = np.array([np.nan])
-        return np.nanquantile(data, np.array(percentile))
+            data = np.asarray([np.nan])
+        return np.nanquantile(data, np.asarray(percentile))
     else:
         weights = weights.copy()
 
@@ -539,7 +539,7 @@ def binning(x, *,
         # the following line should be a little faster using numpy matrix
         # select_index_in_bin = np.eye(bins + 1)[digitized_x - 1].astype(bool)
     else:
-        select_index_in_bin = np.array([
+        select_index_in_bin = np.asarray([
             (x >= x_window_left[i]) & (x < x_window_right[i])
             for i in range(bins)])
 
@@ -585,15 +585,15 @@ def value_in_bin(index_in_bin=None, data=None, weights=None,
         elif bootstrap == 2:
             return bar_and_return(np.nan)
         elif bootstrap == 3:
-            return bar_and_return(np.array([np.nan, np.nan]))
+            return bar_and_return(np.asarray([np.nan, np.nan]))
         elif bootstrap == 4:
             return bar_and_return(stats.bootstrap(([np.nan, np.nan],), func, **bootstrap_args))
 
         # no bootstrap
         if weights is None:
-            func_return_test = func(np.array([1., 1.]))
+            func_return_test = func(np.asarray([1., 1.]))
         else:
-            func_return_test = func(np.array([1., 1.]), weights=np.array([1., 1.]))
+            func_return_test = func(np.asarray([1., 1.]), weights=np.asarray([1., 1.]))
         return_is_single = not hasattr(func_return_test, '__len__')
         if return_is_single:
             return bar_and_return(np.nan)
@@ -711,7 +711,7 @@ def bin_x(x, y, weights=None,
         y_err = [value_in_bin(ind, y, **value_in_bin_kwargs) for ind in index_in_bin]
 
     if mode == 'median' or bootstrap == 1:
-        y_err = np.array(y_err).T
+        y_err = np.asarray(y_err).T
         y_err = np.abs(y_err - ys)
 
     return ys, y_err, x_centers
@@ -804,7 +804,7 @@ def bin_map(x, y, z=None, weights=None, func=mean,
         z = np.ones_like(x)
         func = sum
 
-    z = np.array(z)
+    z = np.asarray(z)
 
     xbins = len(x_bin_edges) - 1
     ybins = len(y_bin_edges) - 1
@@ -889,8 +889,8 @@ def hist(x, weights=None,
                                  func=lambda d, weights: np.sqrt(sum(weights ** 2)))
                     for index_in_bin_i in index_in_bin]
 
-    hist = np.array(hist)
-    hist_err = np.array(hist_err)
+    hist = np.asarray(hist)
+    hist_err = np.asarray(hist_err)
     if isinstance(scale, float):
         pass
     elif scale == 'density':

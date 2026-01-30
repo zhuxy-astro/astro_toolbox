@@ -329,11 +329,11 @@ def _calc_contour_levels(z, contour_levels, **kwargs):
         levels = np.linspace(levels, z.max(), 15 + 1)
 
     elif levels_is_list and all([0 <= i <= 1 for i in contour_levels]):
-        percentile_outside = 1 - np.array(contour_levels)
+        percentile_outside = 1 - np.asarray(contour_levels)
         levels = calc.weighted_percentile(weights=z, percentile=percentile_outside)
         levels = np.sort(levels)
         if levels[-1] < z.max():
-            levels = np.append(np.array(levels), z.max())
+            levels = np.append(np.asarray(levels), z.max())
 
     elif levels_is_list:
         levels = contour_levels
@@ -1002,9 +1002,9 @@ def map_scatter(x, y, z=None,
     else:
         fill_value = not z_log if z is None else np.nan
     z_map_interp = RegularGridInterpolator(
-        (x_centers, y_centers), np.array(z_map).T,
+        (x_centers, y_centers), np.asarray(z_map).T,
         method=method, bounds_error=False, fill_value=fill_value)
-    z_map_scatter = z_map_interp(np.array([x[select], y[select]]).T)
+    z_map_scatter = z_map_interp(np.asarray([x[select], y[select]]).T)
     z_map_scatter = attr.array2column(z_map_scatter, meta_from=z)
 
     ax = kwargs.pop('ax', plt.subplots(layout=layout)[1])

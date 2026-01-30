@@ -293,7 +293,7 @@ def percentile(x,
                select=slice(None)):
     """percentile must be a list or array
     """
-    percentile = np.array(percentile)
+    percentile = np.asarray(percentile)
     cuts = calc.weighted_percentile(
         data=x, weights=weights,
         select=select,
