@@ -290,19 +290,39 @@ def id(table, value, name=['plate', 'mjd', 'fiberid']):
 def percentile(x,
                percentile=[0.25, 0.50, 0.75],
                weights=None,
-               select=slice(None)):
+               select=slice(None),
+               name=None, label=None):
     """percentile must be a list or array
     """
+    name, label = _get_name_label(x, name, label)
     percentile = np.asarray(percentile)
+
     cuts = calc.weighted_percentile(
         data=x, weights=weights,
         select=select,
         percentile=percentile)
     nbins = len(cuts) + 1
-    select_percentile = np.ones((nbins, len(x)), dtype=bool)
+    if isinstance(select, slice):
+        select_base = np.zeros_like(x, dtype=bool)
+        select_base[select] = True
+    else:
+        select_base = select.copy()
+    select_percentile = [select_base.copy() for _ in range(nbins)]
+
     for i in range(nbins):
         if i != 0:
             select_percentile[i] &= (x > cuts[i - 1])
+            left_str = f'{percentile[i - 1] * 100:.1f}'.rstrip("0").rstrip(".")
+        else:
+            left_str = '0'
         if i != nbins - 1:
             select_percentile[i] &= (x < cuts[i])
+            right_str = f'{percentile[i] * 100:.1f}'.rstrip("0").rstrip(".")
+        else:
+            right_str = '100'
+        select_percentile[i] = attr.array2column(
+            select_percentile[i],
+            name=f'{name} percentile {left_str}%-{right_str}%',
+            label=rf'${label} \in ({left_str}\%, {right_str}\%)$'
+        )
     return select_percentile
