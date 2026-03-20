@@ -25,6 +25,7 @@ used only in axis labels, and can be mathematical.
 
 # %% import
 from functools import wraps
+from itertools import product
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -32,6 +33,181 @@ from astropy.table import Table, Column
 from astropy.table.column import MaskedColumn
 from numpy.lib.recfunctions import structured_to_unstructured
 # import pandas as pd
+
+
+# %% func: calc
+def _calc_is_column_like(value):
+    return isinstance(value, (Table, Column, MaskedColumn))
+
+
+def _calc_format_scalar(value):
+    if isinstance(value, str):
+        return value
+    if np.isscalar(value):
+        if isinstance(value, (float, np.floating)):
+            return f'{value:.3g}'
+        return str(value)
+    return None
+
+
+def _calc_operand_text(value, use_label=False):
+    scalar_text = _calc_format_scalar(value)
+    if scalar_text is not None:
+        return scalar_text, False
+
+    if use_label and hasattr(value, 'meta'):
+        text = value.meta.get('label')
+        if text is not None:
+            is_math = text.startswith('$') and text.endswith('$')
+            if is_math:
+                text = text[1:-1]
+            return text, is_math
+
+    if hasattr(value, 'name') and value.name is not None:
+        return value.name, False
+    return 'x', False
+
+
+def _calc_limit_values(value):
+    scalar_text = _calc_format_scalar(value)
+    if scalar_text is not None:
+        return [value]
+
+    if hasattr(value, 'meta'):
+        left = value.meta.get('left')
+        right = value.meta.get('right')
+        if left is not None and right is not None:
+            return [left, right]
+    return None
+
+
+def _calc_func_name(func, use_label=False):
+    func_name = getattr(func, '__name__', 'func')
+    if not use_label:
+        return func_name
+
+    latex_names = {
+        'log10': r'\log_{10}',
+        'log': r'\log',
+        'sin': r'\sin',
+        'cos': r'\cos',
+        'tan': r'\tan',
+        'arcsin': r'\arcsin',
+        'arccos': r'\arccos',
+        'arctan': r'\arctan',
+        'sqrt': r'\sqrt',
+        'exp': r'\exp',
+        'abs': r'|',
+    }
+    return latex_names.get(func_name, func_name)
+
+
+def _calc_build_expr(func, args, use_label=False):
+    op_map = {
+        'add': '+',
+        'subtract': '-',
+        'multiply': '*',
+        'divide': '/',
+        'true_divide': '/',
+        'floor_divide': '//',
+        'power': '**',
+    }
+
+    func_name = getattr(func, '__name__', 'func')
+    operand_texts = [_calc_operand_text(arg, use_label=use_label) for arg in args]
+    texts = [text for text, _ in operand_texts]
+    use_math = use_label and any(is_math for _, is_math in operand_texts)
+
+    if func_name in op_map and len(texts) == 2:
+        if use_label and func_name == 'multiply':
+            expr = rf'{texts[0]} \times {texts[1]}'
+        elif use_label and func_name == 'power':
+            expr = rf'{texts[0]}^{{{texts[1]}}}'
+        else:
+            expr = f'{texts[0]}{op_map[func_name]}{texts[1]}'
+    elif func_name == 'negative' and len(texts) == 1:
+        expr = f'-{texts[0]}'
+    elif func_name == 'positive' and len(texts) == 1:
+        expr = f'+{texts[0]}'
+    elif func_name == 'absolute' and len(texts) == 1:
+        expr = f'|{texts[0]}|' if use_label else f'abs({texts[0]})'
+    else:
+        expr = f'{_calc_func_name(func, use_label=use_label)}({", ".join(texts)})'
+
+    if use_label and use_math:
+        return f'${expr}$'
+    return expr
+
+
+def _calc_limits(func, args, **kwargs):
+    limit_values = []
+    for arg in args:
+        arg_limits = _calc_limit_values(arg)
+        if arg_limits is None:
+            return None, None
+        limit_values.append(arg_limits)
+
+    results = []
+    for values in product(*limit_values):
+        try:
+            result = func(*values, **kwargs)
+        except Exception:
+            return None, None
+        if np.ndim(result) != 0:
+            return None, None
+        results.append(result)
+
+    if len(results) == 0:
+        return None, None
+
+    results = np.asarray(results, dtype=float)
+    good = np.isfinite(results)
+    if not np.any(good):
+        return None, None
+    return np.nanmin(results[good]), np.nanmax(results[good])
+
+
+def calc(func, *args, name=None, label=None, meta_from=None, **kwargs):
+    """
+    Apply a function to columns/arrays and update the output name and label.
+
+    Examples
+    --------
+    attr.calc(np.log10, t['mstar'])
+        -> name 'log10(mstar)'
+        -> label '$\\log_{10}(\\log M_*\\ [\\mathrm{M_\\odot}])$'
+    attr.calc(np.add, mstar, 10)
+        -> name 'mstar+10'
+        -> label '$\\log M_*\\ [\\mathrm{M_\\odot}]$ + 10'
+    attr.calc(np.multiply, mstar, sfr)
+        -> name 'mstar*sfr'
+        -> label '$\\log M_*\\ [\\mathrm{M_\\odot}] \\times \\log \\mathrm{SFR}\\ [\\mathrm{M_\\odot\\ yr}^{-1}]$'
+    """
+    result = func(*args, **kwargs)
+
+    if meta_from is None:
+        for arg in args:
+            if _calc_is_column_like(arg):
+                meta_from = arg
+                break
+
+    if name is None:
+        name = _calc_build_expr(func, args, use_label=False)
+    if label is None:
+        label = _calc_build_expr(func, args, use_label=True)
+
+    column = array2column(result, meta_from=meta_from, name=name)
+    column.meta['label'] = label
+    for attr_name in ['step', 'window', 'edges']:
+        reset(column, attr_name)
+
+    left, right = _calc_limits(func, args, **kwargs)
+    if left is None or right is None:
+        reset_limit(column)
+    else:
+        column.meta['left'] = left
+        column.meta['right'] = right
+    return column
 
 
 # %% array & table
