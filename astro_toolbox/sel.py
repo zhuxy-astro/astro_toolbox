@@ -201,7 +201,7 @@ def good(array):
 # %% func: select range_ and select value_edges
 def range_(data, left=None, right=None,
            name=None, label=None):
-    """return a select array cut by one edge or two edges
+    """return a select array cut by one edge or two edges, or true values if no edge is given.
     """
     name, label = _get_name_label(data, name, label)
 
@@ -210,10 +210,15 @@ def range_(data, left=None, right=None,
 
     if left is None:
         if right is None:
-            raise ValueError('At least one of left and right should be set.')
+            return attr.array2column(
+                np.array(data, dtype=bool),
+                meta_from=data,
+                name=f'{name}',
+                label=rf'${label}$')
 
         return attr.array2column(
             data <= right,
+            meta_from=data,
             right=right,
             name=f'{name}{le}{right:.3g}',
             label=rf'${label} {le_math} {right:.3g}$')
@@ -221,12 +226,14 @@ def range_(data, left=None, right=None,
     if right is None:
         return attr.array2column(
             data > left,
+            meta_from=data,
             left=left,
             name=f'{name}>{left:.3g}',
             label=rf'${label} > {left:.3g}$')
 
     return attr.array2column(
         (data > left) & (data <= right),
+        meta_from=data,
         right=right, left=left,
         name=f'{left:.3g}<{name}{le}{right:.3g}',
         label=rf'${left:.3g} < {label} {le_math} {right:.3g}$')
